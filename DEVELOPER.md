@@ -46,20 +46,22 @@ Navigate to your plugin folder (e.g., `my-plugin/`) and open `plugin.js`. This i
         const homeUrl = `${manifest.baseUrl}/trending`;
         cb({ success: true, data: { "Trending": [ /* MultimediaItems */ ] } });
     }
-```
 
     // 2. search: Handles user queries
     async function search(query, cb) {
+        const searchUrl = `${manifest.baseUrl}/search?q=${query}`;
         cb({ success: true, data: [ /* MultimediaItems */ ] });
     }
 
     // 3. load: Fetches full details for a specific item
     function load(url, cb) {
+        const loadUrl = `${manifest.baseUrl}/load?url=${url}`;
         cb({ success: true, data: { /* MultimediaItem with Episodes */ } });
     }
 
     // 4. loadStreams: Provides playable video links
     async function loadStreams(url, cb) {
+        const streamUrl = `${manifest.baseUrl}/streams?url=${url}`;
         cb({ success: true, data: [ /* StreamResult objects */ ] });
     }
 
