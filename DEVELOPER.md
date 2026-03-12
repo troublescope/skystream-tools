@@ -26,7 +26,18 @@ A repository is a collection of plugins. Use the CLI to scaffold your first one:
 skystream init "My-Repo" --package-name com.yourname.repo --plugin-name "my-plugin" --author "YourName"
 ```
 
-### Step 2: Write Your Scraper Logic
+### Step 2: Add More Plugins
+You can host multiple plugins in a single repository. To add a second or third plugin:
+```bash
+# Navigate to your repository root
+cd my-repo/
+
+# Add a new plugin folder and template
+skystream add "New-Plugin-Name"
+```
+The CLI will automatically generate a new folder with a safe `packageName` based on your repository ID.
+
+### Step 3: Write Your Scraper Logic
 Navigate to your plugin folder (e.g., `my-plugin/`) and open `plugin.js`. This is where you implement the four core functions.
 
 > [!IMPORTANT]
@@ -74,7 +85,7 @@ Navigate to your plugin folder (e.g., `my-plugin/`) and open `plugin.js`. This i
 ```
 </details>
 
-### Step 3: Local Testing
+### Step 4: Local Testing
 Verify your logic without leaving your terminal:
 ```bash
 # Test the dashboard
