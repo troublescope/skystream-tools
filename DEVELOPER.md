@@ -73,5 +73,68 @@ The CLI automatically scaffolds a GitHub Action in `.github/workflows/build.yml`
 
 This ensures your repository is always "live" and up-to-date for your users without any manual steps.
 
+## 8. Writing Plugin Logic
+Each plugin consists of a `plugin.json` (metadata) and a `plugin.js` (logic).
+
+### A. The Manifest (`plugin.json`)
+Defines the plugin's identity and capabilities.
+```json
+{
+  "id": "com.example.repo.pluginname",
+  "name": "My Plugin",
+  "version": 1,
+  "description": "Short description",
+  "authors": ["USER_NAME"],
+  "languages": ["en"],
+  "categories": ["Movie", "TvSeries"]
+}
+```
+
+### B. The Logic (`plugin.js`)
+SkyStream plugins run in a sandboxed environment. You must wrap your code in an **IIFE** and export functions to `globalThis`.
+
+```javascript
+(function() {
+    // 1. getHome: Returns content for the dashboard
+    async function getHome() {
+        return {
+            success: true,
+            data: [
+                { title: "Trending Movies", items: [{ name: "The Matrix", url: "https://example.com/matrix" }] }
+            ]
+        };
+    }
+
+    // 2. search: Handles user queries
+    async function search(query) {
+        return {
+            success: true,
+            data: [{ name: `Result for ${query}`, url: "..." }]
+        };
+    }
+
+    // 3. loadStreams: Provides video links for a content item
+    async function loadStreams(contentUrl) {
+        return {
+            success: true,
+            data: [
+                { quality: "1080p", url: "https://cdn.com/video.mp4" }
+            ]
+        };
+    }
+
+    // Export functions to the app
+    globalThis.getHome = getHome;
+    globalThis.search = search;
+    globalThis.loadStreams = loadStreams;
+})();
+```
+
+### C. The `PluginResult` Schema
+All functions must return a standard object:
+- `success` (boolean): Whether the operation worked.
+- `data` (any): The result content (if successful).
+- `message` (string): Error description (if failed).
+
 ---
 *Powered by SkyStream Gen 2 Architecture*
