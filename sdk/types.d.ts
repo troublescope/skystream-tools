@@ -9,42 +9,57 @@ export interface Manifest {
   author: string;
   description?: string;
   iconUrl?: string;
+  languages: string[];
+  categories: string[];
 }
 
 export type Result<T> = 
   | { success: true; data: T }
   | { success: false; errorCode: string; message: string };
 
-export interface MediaItem {
+/**
+ * Valid content types for MultimediaItem
+ */
+export type MultimediaType = 'movie' | 'series' | 'anime' | 'livestream';
+
+/**
+ * Standard Multimedia Item
+ */
+export interface IMultimediaItem {
   title: string;
   url: string;
-  posterUrl?: string;
+  posterUrl: string;
+  type: MultimediaType;
+  bannerUrl?: string;
   description?: string;
-  isFolder: boolean;
-}
-
-export interface HomeData {
-  [category: string]: MediaItem[];
-}
-
-export interface MediaDetails extends MediaItem {
-  episodes?: Episode[];
-}
-
-export interface Episode {
-  name: string;
-  season: number;
-  episode: number;
-  url: string; // JSON string encoded Stream[] or direct URL
-  posterUrl?: string;
-}
-
-export interface Stream {
-  url: string;
-  quality: string;
+  episodes?: IEpisode[];
   headers?: Record<string, string>;
-  drmKey?: string;
+  provider?: string;
+}
+
+/**
+ * Standard Episode for multi-part content
+ */
+export interface IEpisode {
+  name: string;
+  url: string;
+  season?: number;
+  episode?: number;
+  description?: string;
+  posterUrl?: string;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Standard Stream Result
+ */
+export interface IStreamResult {
+  url: string;
+  quality?: string;
+  headers?: Record<string, string>;
+  subtitles?: { url: string; label: string; lang: string }[];
   drmKid?: string;
+  drmKey?: string;
   licenseUrl?: string;
 }
 
@@ -59,6 +74,44 @@ declare global {
     error(...args: any[]): void;
     warn(...args: any[]): void;
   };
+
+  /** Helper Class: MultimediaItem */
+  class MultimediaItem implements IMultimediaItem {
+    constructor(data: IMultimediaItem);
+    title: string;
+    url: string;
+    posterUrl: string;
+    type: MultimediaType;
+    bannerUrl?: string;
+    description?: string;
+    episodes?: IEpisode[];
+    headers?: Record<string, string>;
+    provider?: string;
+  }
+
+  /** Helper Class: Episode */
+  class Episode implements IEpisode {
+    constructor(data: IEpisode);
+    name: string;
+    url: string;
+    season?: number;
+    episode?: number;
+    description?: string;
+    posterUrl?: string;
+    headers?: Record<string, string>;
+  }
+
+  /** Helper Class: StreamResult */
+  class StreamResult implements IStreamResult {
+    constructor(data: IStreamResult);
+    url: string;
+    quality?: string;
+    headers?: Record<string, string>;
+    subtitles?: { url: string; label: string; lang: string }[];
+    drmKid?: string;
+    drmKey?: string;
+    licenseUrl?: string;
+  }
 
   /** Native Bridge: HTTP GET */
   function http_get(

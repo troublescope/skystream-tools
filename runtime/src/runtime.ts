@@ -49,6 +49,15 @@ export class SkyStreamRuntime {
       },
       btoa: (s: string) => Buffer.from(s).toString('base64'),
       atob: (s: string) => Buffer.from(s, 'base64').toString('utf8'),
+      MultimediaItem: class MultimediaItem {
+        constructor(data: any) { Object.assign(this, data); if (!this.type) this.type = 'movie'; }
+      },
+      Episode: class Episode {
+        constructor(data: any) { Object.assign(this, data); }
+      },
+      StreamResult: class StreamResult {
+        constructor(data: any) { Object.assign(this, data); }
+      },
       globalThis: {} as any,
     };
   }
@@ -57,7 +66,11 @@ export class SkyStreamRuntime {
     const jsContent = await fs.readFile(this.options.pluginPath, 'utf8');
     
     // Simple execution in Node vm-like style but using a Function constructor for mock injection
-    const runtimeFunc = new Function('manifest', 'console', 'http_get', 'http_post', 'btoa', 'atob', 'globalThis', jsContent);
+    const runtimeFunc = new Function(
+      'manifest', 'console', 'http_get', 'http_post', 'btoa', 'atob', 
+      'MultimediaItem', 'Episode', 'StreamResult', 'globalThis', 
+      jsContent
+    );
     
     runtimeFunc(
       this.context.manifest,
@@ -66,6 +79,9 @@ export class SkyStreamRuntime {
       this.context.http_post,
       this.context.btoa,
       this.context.atob,
+      this.context.MultimediaItem,
+      this.context.Episode,
+      this.context.StreamResult,
       this.context.globalThis
     );
 
