@@ -3,10 +3,11 @@
  */
 
 export interface Manifest {
-  id: string;
+  packageName: string;
   name: string;
   version: number;
   author: string;
+  baseUrl: string;
   description?: string;
   iconUrl?: string;
   languages: string[];

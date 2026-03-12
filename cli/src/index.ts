@@ -12,15 +12,15 @@ const program = new Command();
 program
   .name('skystream')
   .description('SkyStream Plugin Development Kit CLI (Sky Gen 2)')
-  .version('1.2.1');
+  .version('1.2.4');
 
 // Schemas
 const pluginSchema = z.object({
-  id: z.string().min(5).regex(/^[a-z0-9._-]+$/),
+  packageName: z.string().min(5).regex(/^[a-z0-9._-]+$/),
   name: z.string().min(1),
-  internalName: z.string().min(1).regex(/^[A-Z0-9]+$/),
   version: z.number().int().positive(),
   description: z.string().min(1),
+  baseUrl: z.string().url(),
   authors: z.array(z.string()).min(1),
   languages: z.array(z.string()).min(1),
   categories: z.array(z.string()).min(1),
@@ -28,7 +28,7 @@ const pluginSchema = z.object({
 
 const repoSchema = z.object({
   name: z.string().min(1),
-  id: z.string().min(3).regex(/^[a-z0-9._-]+$/),
+  packageName: z.string().min(3).regex(/^[a-z0-9._-]+$/),
   description: z.string().min(1),
   manifestVersion: z.number().int().positive(),
   pluginLists: z.array(z.string().url()),
@@ -61,12 +61,12 @@ const JS_TEMPLATE = `(function() {
                     "Trending": [
                         new MultimediaItem({ 
                             title: "Example Movie", 
-                            url: "https://site.com/movie", 
-                            posterUrl: "https://site.com/poster.jpg", 
+                            url: \`\${manifest.baseUrl}/movie\`, 
+                            posterUrl: \`\${manifest.baseUrl}/poster.jpg\`, 
                             type: "movie", // Valid types: movie, series, anime, livestream
-                            bannerUrl: "https://site.com/banner.jpg", // (optional)
+                            bannerUrl: \`\${manifest.baseUrl}/banner.jpg\`, // (optional)
                             description: "Plot summary here...", // (optional)
-                            headers: { "Referer": "https://site.com" } // (optional)
+                            headers: { "Referer": \`\${manifest.baseUrl}\` } // (optional)
                         })
                     ] 
                 } 
@@ -87,15 +87,15 @@ const JS_TEMPLATE = `(function() {
             cb({ 
                 success: true, 
                 data: [
-                    new MultimediaItem({ 
-                        title: "Example Movie", 
-                        url: "https://site.com/movie", 
-                        posterUrl: "https://site.com/poster.jpg", 
-                        type: "movie", // Valid types: movie, series, anime, livestream
-                        bannerUrl: "https://site.com/banner.jpg", // (optional)
-                        description: "Plot summary here...", // (optional)
-                        headers: { "Referer": "https://site.com" } // (optional)
-                    })
+                        new MultimediaItem({ 
+                            title: "Example Movie", 
+                            url: \`\${manifest.baseUrl}/movie\`, 
+                            posterUrl: \`\${manifest.baseUrl}/poster.jpg\`, 
+                            type: "movie", // Valid types: movie, series, anime, livestream
+                            bannerUrl: \`\${manifest.baseUrl}/banner.jpg\`, // (optional)
+                            description: "Plot summary here...", // (optional)
+                            headers: { "Referer": \`\${manifest.baseUrl}\` } // (optional)
+                        })
                 ] 
             });
         } catch (e) {
@@ -116,20 +116,20 @@ const JS_TEMPLATE = `(function() {
                 data: new MultimediaItem({
                     title: "Example Movie Full Details",
                     url: url,
-                    posterUrl: "https://site.com/poster.jpg",
+                    posterUrl: \`\${manifest.baseUrl}/poster.jpg\`,
                     type: "movie", // Valid types: movie, series, anime, livestream
-                    bannerUrl: "https://site.com/banner.jpg", // (optional)
+                    bannerUrl: \`\${manifest.baseUrl}/banner.jpg\`, // (optional)
                     description: "This is a detailed description of the movie.", // (optional)
-                    headers: { "Referer": "https://site.com" }, // (optional)
+                    headers: { "Referer": \`\${manifest.baseUrl}\` }, // (optional)
                     episodes: [
                         new Episode({ 
                             name: "Episode 1", 
-                            url: "https://site.com/watch/1", 
+                            url: \`\${manifest.baseUrl}/watch/1\`, 
                             season: 1, // (optional)
                             episode: 1, // (optional)
                             description: "Episode summary...", // (optional)
-                            posterUrl: "https://site.com/ep-poster.jpg", // (optional)
-                            headers: { "Referer": "https://site.com" } // (optional)
+                            posterUrl: \`\${manifest.baseUrl}/ep-poster.jpg\`, // (optional)
+                            headers: { "Referer": \`\${manifest.baseUrl}\` } // (optional)
                         })
                     ]
                 })
@@ -153,9 +153,9 @@ const JS_TEMPLATE = `(function() {
                     new StreamResult({ 
                         url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", 
                         quality: "1080p", // (optional)
-                        headers: { "Referer": "https://site.com" }, // (optional)
+                        headers: { "Referer": \`\${manifest.baseUrl}\` }, // (optional)
                         subtitles: [
-                            { url: "https://site.com/sub.vtt", label: "English", lang: "en" } // (optional)
+                            { url: \`\${manifest.baseUrl}/sub.vtt\`, label: "English", lang: "en" } // (optional)
                         ],
                         drmKid: "kid_value", // (optional)
                         drmKey: "key_value", // (optional)
@@ -275,7 +275,7 @@ program.command('init')
 
     const repo = {
       name: projectName,
-      id: options.packageName,
+      packageName: options.packageName,
       description: options.description,
       manifestVersion: 1,
       pluginLists: [
@@ -298,10 +298,10 @@ program.command('init')
     await fs.ensureDir(pluginDir);
 
     const pluginManifest = {
-      id: `${packageName}.${pluginSlug}`,
+      packageName: `${packageName}.${pluginSlug}`,
       name: pluginName,
-      internalName: pluginName.toUpperCase().replace(/\s+/g, ''),
       version: 1,
+      baseUrl: "https://example.com",
       description: `${pluginName} plugin (Sky Gen 2)`,
       authors: [options.author],
       languages: ["en"],
@@ -313,7 +313,7 @@ program.command('init')
 
     console.log('\nSky Gen 2 Repository successfully initialized!');
     console.log(`Project Directory: ${rootDir}`);
-    console.log(`First Plugin ID: ${pluginManifest.id}`);
+    console.log(`First Plugin Package Name: ${pluginManifest.packageName}`);
   });
 
 program.command('add')
@@ -340,13 +340,13 @@ program.command('add')
     }
 
     // Guess package-name from repo id
-    const packageName = repo.id;
+    const packageName = repo.packageName;
 
     const pluginManifest = {
-      id: `${packageName}.${pluginSlug}`,
+      packageName: `${packageName}.${pluginSlug}`,
       name: pluginName,
-      internalName: pluginName.toUpperCase().replace(/\s+/g, ''),
       version: 1,
+      baseUrl: "https://example.com",
       description: options.description || `${pluginName} plugin for ${repo.name}`,
       authors: [options.author || repo.author || "Developer"],
       languages: ["en"],
@@ -357,7 +357,7 @@ program.command('add')
     await fs.writeJson(path.join(pluginDir, 'plugin.json'), pluginManifest, { spaces: 2 });
     await fs.writeFile(path.join(pluginDir, 'plugin.js'), JS_TEMPLATE);
 
-    console.log(`✓ Added Plugin: ${pluginName} (ID: ${pluginManifest.id})`);
+    console.log(`✓ Added Plugin: ${pluginName} (Package: ${pluginManifest.packageName})`);
   });
 
 program.command('validate')
@@ -373,12 +373,12 @@ program.command('validate')
             try {
                 const manifest = await fs.readJson(manifestPath);
                 pluginSchema.parse(manifest);
-                console.log(`✓ ${manifest.id}: Manifest OK`);
+                console.log(`✓ ${manifest.packageName}: Manifest OK`);
                 const js = await fs.readFile(path.join(itemPath, 'plugin.js'), 'utf8');
                 if (js.includes('globalThis.getHome = getHome')) {
-                    console.log(`✓ ${manifest.id}: Logic OK`);
+                    console.log(`✓ ${manifest.packageName}: Logic OK`);
                 } else {
-                    console.warn(`! ${manifest.id}: Missing exports`);
+                    console.warn(`! ${manifest.packageName}: Missing exports`);
                 }
                 count++;
             } catch (e: any) {
@@ -405,7 +405,7 @@ program.command('test')
     const manifest = await fs.readJson(manifestPath);
     const jsContent = await fs.readFile(jsPath, 'utf8');
 
-    console.log(`\n--- Testing ${manifest.id} -> ${options.function} ---`);
+    console.log(`\n--- Testing ${manifest.packageName} -> ${options.function} ---`);
     const context: any = {
       manifest,
       console: { log: (...args: any[]) => console.log('  [JS]:', ...args), error: (...args: any[]) => console.error('  [JS ERR]:', ...args) },
@@ -463,7 +463,8 @@ program.command('build')
         const mPath = path.join(itemPath, 'plugin.json');
         if (await fs.pathExists(mPath) && (await fs.stat(itemPath)).isDirectory()) {
             const manifest = await fs.readJson(mPath);
-            const bundleName = `${manifest.id}.sky`;
+            const packageName = manifest.packageName || manifest.id || item;
+            const bundleName = `${packageName}.sky`;
             const outPath = path.join(distDir, bundleName);
             
             const arch = archiver('zip', { zlib: { level: 9 } });
@@ -473,13 +474,12 @@ program.command('build')
             await arch.finalize();
 
             catalog.push({ ...manifest, url: `${distUrl}/${bundleName}` });
-            console.log(`✓ Bundled ${manifest.id}`);
+            console.log(`✓ Bundled ${manifest.packageName}`);
         }
     }
 
     const finalRepo = {
         ...repo,
-        updatedAt: new Date().toISOString(),
         pluginLists: [ `${distUrl}/plugins.json` ]
     };
 

@@ -27,17 +27,28 @@ skystream init "My-Repo" --package-name com.yourname.repo --plugin-name "my-plug
 ```
 
 ### Step 2: Write Your Scraper Logic
-Navigate to your plugin folder (e.g., `my-plugin/`) and open `plugin.js`. This is where you implement the four core functions:
+Navigate to your plugin folder (e.g., `my-plugin/`) and open `plugin.js`. This is where you implement the four core functions.
+
+> [!IMPORTANT]
+> **Dynamic Base URL Architecture**: Always use `manifest.baseUrl` instead of hardcoded domain strings. This allows users to override the domain (e.g., for mirrors or proxies) directly from the app.
 
 <details>
 <summary><b>View the Core Function Templates</b></summary>
 
 ```javascript
 (function() {
+    // Access the pre-injected manifest
+    const pluginManifest = manifest;
+
     // 1. getHome: Returns categories for the dashboard
     async function getHome(cb) {
+        // Use dynamic baseUrl
+        const homeUrl = `${pluginManifest.baseUrl}/trending`;
         cb({ success: true, data: { "Trending": [ /* MultimediaItems */ ] } });
     }
+```
+<!-- slide -->
+<!-- (skipping to classes section for the next edit chunk if needed, but I'll do a single contiguous replacement if possible or use multi) -->
 
     // 2. search: Handles user queries
     async function search(query, cb) {
@@ -108,11 +119,11 @@ SkyStream provides built-in global classes to ensure data consistency. Using the
 ```javascript
 const item = new MultimediaItem({
   title: "Example Title",
-  url: "https://site.com/movie",
-  posterUrl: "https://site.com/poster.jpg",
+  url: `${manifest.baseUrl}/movie`,
+  posterUrl: `${manifest.baseUrl}/poster.jpg`,
   type: "movie", // Options: movie, series, anime, livestream
   description: "A great story...", // (optional)
-  bannerUrl: "https://site.com/banner.jpg" // (optional)
+  bannerUrl: `${manifest.baseUrl}/banner.jpg` // (optional)
 });
 ```
 
@@ -120,7 +131,7 @@ const item = new MultimediaItem({
 ```javascript
 const ep = new Episode({
   name: "S01E01",
-  url: "https://site.com/watch/1",
+  url: `${manifest.baseUrl}/watch/1`,
   season: 1,
   episode: 1
 });
@@ -131,7 +142,7 @@ const ep = new Episode({
 const stream = new StreamResult({
   url: "https://cdn.com/video.mp4",
   quality: "1080p",
-  headers: { "Referer": "https://site.com" }
+  headers: { "Referer": `${manifest.baseUrl}` }
 });
 ```
 </details>
@@ -166,7 +177,7 @@ If you prefer raw objects, ensure they match these definitions:
 ### Byte-Level Proxying
 If a video host requires specific headers that the player can't send, use the Magic Proxy:
 ```javascript
-const proxyUrl = "MAGIC_PROXY_v1" + btoa("https://locked-site.com/video.mp4");
+const proxyUrl = "MAGIC_PROXY_v1" + btoa(`${manifest.baseUrl}/video.mp4`);
 ```
 
 ### Dynamic M3U8 Generation
