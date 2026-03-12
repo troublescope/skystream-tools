@@ -85,7 +85,7 @@ skystream test --function search --query "Big Buck Bunny"
 ```
 
 ### Step 4: Deployment
-SkyStream uses GitHub Actions to build and host your repository automatically.
+SkyStream uses GitHub Actions to deploy and host your repository automatically.
 1. Create a new repository on GitHub.
 2. Push your code:
 ```bash
@@ -100,7 +100,7 @@ git push -u origin main
 
 ## 3. Installation in SkyStream App
 
-Once your GitHub Action finishes building (check the "Actions" tab on GitHub), your repository is live!
+Once your GitHub Action finishes deploying (check the "Actions" tab on GitHub), your repository is live!
 
 1. Open SkyStream -> **Extensions** -> **Add Source**.
 2. Paste your `repo.json` URL (e.g., `https://raw.githubusercontent.com/USER/REPO/main/repo.json`).

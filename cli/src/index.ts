@@ -236,22 +236,22 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Build Repository
+      - name: Deploy Repository
         run: |
           npm install -g skystream-cli
-          skystream build -u https://raw.githubusercontent.com/\${{ github.repository }}/main
+          skystream deploy -u https://raw.githubusercontent.com/\${{ github.repository }}/main
 
       - name: Commit and Push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add .
-          git commit -m "chore: automated build [skip ci]" || echo "No changes to commit"
+          git commit -m "chore: automated deploy [skip ci]" || echo "No changes to commit"
           git push
 `;
 
 async function updatePluginsJson(rootDir: string) {
-  // Logic removed: build command now handles dynamic generation in dist/
+  // Logic removed: deploy command now handles dynamic generation in dist/
 }
 
 program.command('init')
@@ -439,8 +439,8 @@ program.command('test')
     else await fn(options.query, callback);
   });
 
-program.command('build')
-  .description('Build all plugins and repository index')
+program.command('deploy')
+  .description('Deploy all plugins and repository index')
   .requiredOption('-u, --url <url>', 'Base hosting URL for .sky files')
   .action(async (options) => {
     const rootDir = process.cwd();
@@ -499,7 +499,7 @@ program.command('build')
         }
     }
 
-    console.log(`\nBuild Complete. Assets generated in dist/`);
+    console.log(`\nDeployment Complete. Assets generated in dist/`);
     console.log(`\nYour Repo Link for the app:`);
     console.log(`> ${baseRaw}/repo.json`);
   });

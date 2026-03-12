@@ -1,6 +1,6 @@
 # SkyStream CLI
 
-The official command-line toolkit for building, testing, and managing SkyStream (Gen 2) plugin repositories.
+The official command-line toolkit for deploying, testing, and managing SkyStream (Gen 2) plugin repositories.
 
 ## 🚀 Quick Start
 
@@ -23,10 +23,10 @@ cd my-universe
 skystream add "New Provider"
 ```
 
-### Build for Distribution
+### Deploy for Distribution
 
 ```bash
-skystream build -u https://my-cdn.com/repo
+skystream deploy -u https://my-cdn.com/repo
 ```
 
 ## 🛠 Commands
@@ -37,7 +37,7 @@ skystream build -u https://my-cdn.com/repo
 | `add` | Add a new plugin to the repository |
 | `validate` | Validate all plugins in the repo |
 | `test` | Test a specific plugin in a mock runtime |
-| `build` | Bundle plugins and generate `repo.json` |
+| `deploy` | Bundle plugins and generate `repo.json` |
 
 ## 📖 Learn More
 Visit the [SkyStream Repository Specification](https://github.com/akashdh11/skystream) for more details.
