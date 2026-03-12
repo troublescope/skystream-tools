@@ -59,7 +59,15 @@ const JS_TEMPLATE = `(function() {
                 success: true, 
                 data: { 
                     "Trending": [
-                        { title: "Example Movie", url: "https://site.com/movie", posterUrl: "https://site.com/poster.jpg", isFolder: false }
+                        new MultimediaItem({ 
+                            title: "Example Movie", 
+                            url: "https://site.com/movie", 
+                            posterUrl: "https://site.com/poster.jpg", 
+                            type: "movie", // Valid types: movie, series, anime, livestream
+                            bannerUrl: "https://site.com/banner.jpg", // (optional)
+                            description: "Plot summary here...", // (optional)
+                            headers: { "Referer": "https://site.com" } // (optional)
+                        })
                     ] 
                 } 
             });
@@ -79,7 +87,15 @@ const JS_TEMPLATE = `(function() {
             cb({ 
                 success: true, 
                 data: [
-                    { title: "Result for " + query, url: "https://site.com/search", posterUrl: "https://site.com/poster.jpg", isFolder: false }
+                    new MultimediaItem({ 
+                        title: "Example Movie", 
+                        url: "https://site.com/movie", 
+                        posterUrl: "https://site.com/poster.jpg", 
+                        type: "movie", // Valid types: movie, series, anime, livestream
+                        bannerUrl: "https://site.com/banner.jpg", // (optional)
+                        description: "Plot summary here...", // (optional)
+                        headers: { "Referer": "https://site.com" } // (optional)
+                    })
                 ] 
             });
         } catch (e) {
@@ -97,14 +113,26 @@ const JS_TEMPLATE = `(function() {
             // Standard: Return a single item with full metadata
             cb({ 
                 success: true, 
-                data: { 
-                    title: "Movie Details", 
-                    url, 
-                    posterUrl: "", 
-                    description: "Plot summary...", 
-                    isFolder: false, 
-                    episodes: [] 
-                } 
+                data: new MultimediaItem({
+                    title: "Example Movie Full Details",
+                    url: url,
+                    posterUrl: "https://site.com/poster.jpg",
+                    type: "movie", // Valid types: movie, series, anime, livestream
+                    bannerUrl: "https://site.com/banner.jpg", // (optional)
+                    description: "This is a detailed description of the movie.", // (optional)
+                    headers: { "Referer": "https://site.com" }, // (optional)
+                    episodes: [
+                        new Episode({ 
+                            name: "Episode 1", 
+                            url: "https://site.com/watch/1", 
+                            season: 1, // (optional)
+                            episode: 1, // (optional)
+                            description: "Episode summary...", // (optional)
+                            posterUrl: "https://site.com/ep-poster.jpg", // (optional)
+                            headers: { "Referer": "https://site.com" } // (optional)
+                        })
+                    ]
+                })
             });
         } catch (e) {
             cb({ success: false, errorCode: "LOAD_ERROR", message: (e instanceof Error) ? e.message : String(e) });
@@ -122,7 +150,17 @@ const JS_TEMPLATE = `(function() {
             cb({ 
                 success: true, 
                 data: [
-                    { url: "https://cdn.com/play.m3u8", quality: "1080p", headers: { "Referer": url } }
+                    new StreamResult({ 
+                        url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", 
+                        quality: "1080p", // (optional)
+                        headers: { "Referer": "https://site.com" }, // (optional)
+                        subtitles: [
+                            { url: "https://site.com/sub.vtt", label: "English", lang: "en" } // (optional)
+                        ],
+                        drmKid: "kid_value", // (optional)
+                        drmKey: "key_value", // (optional)
+                        licenseUrl: "https://license-server.com" // (optional)
+                    })
                 ] 
             });
         } catch (e) {

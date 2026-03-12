@@ -1,194 +1,180 @@
 # SkyStream Plugin Development Guide
 
-This guide is for developers who want to create and distribute plugins for the SkyStream app using the **Sky Gen 2 (Repository Hub)** architecture.
+Welcome to the SkyStream plugin ecosystem! This guide will walk you through creating, testing, and distributing plugins using the **Sky Gen 2 (Repository Hub)** architecture.
 
-## 1. Prerequisites
-- **Node.js**: v18 or higher (Download from [nodejs.org](https://nodejs.org/))
-- **SkyStream SDK**: The CLI handles this automatically.
+---
 
-## 2. Installation
-Install the SkyStream CLI globally from NPM:
+## 1. Prerequisites & Setup
 
+Before you begin, ensure you have the following installed:
+- **Node.js**: v18 or higher ([Download](https://nodejs.org/))
+- **Git**: For version control and deployment.
+
+### Install the CLI
+The SkyStream CLI is your primary tool for managing repositories and plugins.
 ```bash
 npm install -g skystream-cli
 ```
 
-## 3. Initialize a Repository
-A repository is a monorepo that contains multiple plugins.
+---
 
+## 2. Core Development Workflow
+
+### Step 1: Initialize a Repository
+A repository is a collection of plugins. Use the CLI to scaffold your first one:
 ```bash
-skystream init "My-Repo" --package-name com.package.name --plugin-name "plugin-name" --author "USER_NAME"
-```
-**This command creates**:
-*   `repo.json`: The **primary entry point** for your repository. It contains metadata and links to all plugins.
-*   `README.md`: User-facing installation guide with your repository's live URL.
-*   `.github/workflows/build.yml`: The automated **CI/CD pipeline** that builds and deploys your repo on every push.
-*   `plugin-name/`: Your first plugin's source folder.
-    *   `plugin.js`: The **JavaScript logic** for your scraper (where you write the code).
-    *   `plugin.json`: The **manifest** defining your plugin's ID, version, and capabilities.
-
-## 4. Plugin Development
-Each plugin consists of a `plugin.json` (metadata) and a `plugin.js` (logic).
-
-### A. The Manifest (`plugin.json`)
-Defines the plugin's identity and capabilities.
-```json
-{
-  "id": "com.example.repo.pluginname",
-  "name": "My Plugin",
-  "version": 1,
-  "description": "Short description",
-  "authors": ["USER_NAME"],
-  "languages": ["en"],
-  "categories": ["Movie", "TvSeries"]
-}
+skystream init "My-Repo" --package-name com.yourname.repo --plugin-name "my-plugin" --author "YourName"
 ```
 
-### B. The Logic (`plugin.js`)
-SkyStream plugins run in a sandboxed environment. You must wrap your code in an **IIFE** and export functions to `globalThis`.
+### Step 2: Write Your Scraper Logic
+Navigate to your plugin folder (e.g., `my-plugin/`) and open `plugin.js`. This is where you implement the four core functions:
+
+<details>
+<summary><b>View the Core Function Templates</b></summary>
 
 ```javascript
 (function() {
-    // 1. getHome: Returns content for the dashboard
+    // 1. getHome: Returns categories for the dashboard
     async function getHome(cb) {
-        cb({ success: true, data: {} });
+        cb({ success: true, data: { "Trending": [ /* MultimediaItems */ ] } });
     }
 
     // 2. search: Handles user queries
     async function search(query, cb) {
-        cb({ success: true, data: [] });
+        cb({ success: true, data: [ /* MultimediaItems */ ] });
     }
 
-    // 3. load: Fetches details for a specific item
+    // 3. load: Fetches full details for a specific item
     function load(url, cb) {
-        cb({ success: true, data: { ... } });
+        cb({ success: true, data: { /* MultimediaItem with Episodes */ } });
     }
 
-    // 4. loadStreams: Provides video links for a content item
+    // 4. loadStreams: Provides playable video links
     async function loadStreams(url, cb) {
-        cb({ success: true, data: [] });
+        cb({ success: true, data: [ /* StreamResult objects */ ] });
     }
 
-    // Export functions to the app
+    // Export to SkyStream
     globalThis.getHome = getHome;
     globalThis.search = search;
     globalThis.load = load;
     globalThis.loadStreams = loadStreams;
 })();
 ```
+</details>
 
-### C. The `PluginResult` Schema
-All functions must return a standard object:
-- `success` (boolean): Whether the operation worked.
-- `data` (any): The result content (if successful).
-- `message` (string): Error description (if failed).
-
-## 5. Testing
-You can add more plugins and test them locally using a mock SkyStream environment.
-
+### Step 3: Local Testing
+Verify your logic without leaving your terminal:
 ```bash
-# Register a new plugin in the repo
-skystream add "plugin-name2"
-
-# Test a plugin function locally
+# Test the dashboard
 skystream test --function getHome
-skystream test --function search --query "Movie Name"
+
+# Test search
+skystream test --function search --query "Big Buck Bunny"
 ```
 
-## 6. Deployment (GitHub)
-The CLI includes built-in CI/CD support. You don't need to build locally; just push your code.
-
-1.  **Initialize Git**:
-    ```bash
-    git init
-    git add .
-    git commit -m "initial commit"
-    ```
-2.  **Push to GitHub**:
-    Create a new repository on GitHub and run:
-    ```bash
-    git remote add origin https://github.com/<USER_NAME>/<REPO_NAME>.git
-    git branch -M main
-    git push -u origin main
-    ```
-
-## 7. App Installation
-Once pushed, the **GitHub Action** will automatically build your repository. To add it to SkyStream:
-
-1.  Go to **Extensions** -> **Add Source** in the app.
-2.  Paste the URL to your **root** `repo.json` from GitHub Pages or Raw content:
-    `https://raw.githubusercontent.com/<USER_NAME>/<REPO_NAME>/main/repo.json`
-3.  All plugins in your repository will appear for installation!
-
-## 8. CI/CD (GitHub Actions)
-The CLI automatically scaffolds a GitHub Action in `.github/workflows/build.yml`.
-
-**What it does**:
-- Triggers on every push to the `main` branch.
-- Installs the SkyStream CLI.
-- Automatically builds your repository and updates the `dist/` folder and `README.md`.
-- Commits and pushes the updated distribution files back to your repo.
-
-## 9. Standard Data Schemas
-To ensure your plugin works correctly with the SkyStream UI, you must use these standardized objects inside your `data` responses.
-
-### A. MultimediaItem
-Used by `getHome`, `search`, and `load`.
-
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `title` | `string` | Yes | Display name of the item. |
-| `url` | `string` | Yes | Unique URL identifying the item (Scraper URL). |
-| `posterUrl` | `string` | Yes | URL for the poster image. |
-| `bannerUrl` | `string` | No | URL for a large background image. |
-| `description` | `string` | No | Short plot summary. |
-| `isFolder` | `boolean` | No | `true` if this is a series/folder containing episodes. |
-| `episodes` | `array` | No | List of `Episode` objects (required if `isFolder: true`). |
-| `headers` | `object` | No | Custom HTTP headers needed for images/metadata. |
-
-**Example**:
-```json
-{
-  "title": "The Matrix",
-  "url": "https://yts.mx/movies/the-matrix-1999",
-  "posterUrl": "https://img.yts.mx/poster.jpg",
-  "isFolder": false
-}
+### Step 4: Deployment
+SkyStream uses GitHub Actions to build and host your repository automatically.
+1. Create a new repository on GitHub.
+2. Push your code:
+```bash
+git init
+git remote add origin https://github.com/USER/REPO.git
+git add .
+git commit -m "Initial commit"
+git push -u origin main
 ```
 
-### B. Episode
-Used inside the `episodes` array of a `MultimediaItem`.
+---
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `name` | `string` | Yes | Title of the episode (e.g., "S01E01"). |
-| `url` | `string` | Yes | Unique URL for this specific episode. |
-| `season` | `number` | No | Season number (default: 0). |
-| `episode` | `number` | No | Episode number (default: 0). |
-| `description` | `string` | No | Plot summary for the episode. |
-| `posterUrl` | `string` | No | Thumbnail URL for this specific episode. |
+## 3. Installation in SkyStream App
 
-### C. StreamResult
-Used by `loadStreams`.
+Once your GitHub Action finishes building (check the "Actions" tab on GitHub), your repository is live!
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `url` | `string` | Yes | Direct video link (mp4, m3u8) or Magnet URI. |
-| `quality` | `string` | No | Resolution label (e.g., "1080p", "4K"). |
-| `headers` | `object` | No | HTTP headers needed to play the video (e.g., `Referer`). |
-| `subtitles` | `array` | No | List of `{ url, label, lang }` objects. |
-| `drmKid` | `string` | No | Key ID for Widevine/DRM content. |
-| `drmKey` | `string` | No | Key for Widevine/DRM content. |
-| `licenseUrl` | `string` | No | License server URL for DRM playback. |
+1. Open SkyStream -> **Extensions** -> **Add Source**.
+2. Paste your `repo.json` URL (e.g., `https://raw.githubusercontent.com/USER/REPO/main/repo.json`).
+3. Your plugins are now ready to install!
 
-**Example**:
-```json
-{
-  "url": "https://cdn.com/stream.m3u8",
-  "quality": "1080p",
-  "headers": { "User-Agent": "SkyStream/1.0", "Referer": "https://site.com" }
-}
+---
+
+## 4. Technical Reference
+
+<details>
+<summary><b>JavaScript Helper Classes (Recommended)</b></summary>
+
+SkyStream provides built-in global classes to ensure data consistency. Using these is highly recommended for better structure and future-proofing.
+
+**MultimediaItem**
+```javascript
+const item = new MultimediaItem({
+  title: "Example Title",
+  url: "https://site.com/movie",
+  posterUrl: "https://site.com/poster.jpg",
+  type: "movie", // Options: movie, series, anime, livestream
+  description: "A great story...", // (optional)
+  bannerUrl: "https://site.com/banner.jpg" // (optional)
+});
 ```
+
+**Episode**
+```javascript
+const ep = new Episode({
+  name: "S01E01",
+  url: "https://site.com/watch/1",
+  season: 1,
+  episode: 1
+});
+```
+
+**StreamResult**
+```javascript
+const stream = new StreamResult({
+  url: "https://cdn.com/video.mp4",
+  quality: "1080p",
+  headers: { "Referer": "https://site.com" }
+});
+```
+</details>
+
+<details>
+<summary><b>Standard Data Schemas</b></summary>
+
+If you prefer raw objects, ensure they match these definitions:
+
+### MultimediaItem
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | Yes | Display name. |
+| `url` | `string` | Yes | Unique ID (usually the source URL). |
+| `posterUrl` | `string` | Yes | Vertical image URL. |
+| `type` | `string` | Yes | `movie`, `series`, `anime`, or `livestream`. |
+| `episodes` | `array` | No | List of `Episode` objects. |
+
+### StreamResult
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `url` | `string` | Yes | Playable link (MP4/HLS/Magnet). |
+| `quality` | `string` | No | Label (e.g., "4K"). |
+| `subtitles` | `array` | No | `{ url, label, lang }`. |
+| `drmKid` | `string` | No | Widevine Key ID. |
+| `licenseUrl`| `string` | No | DRM License server. |
+</details>
+
+<details>
+<summary><b>Advanced Features</b></summary>
+
+### Byte-Level Proxying
+If a video host requires specific headers that the player can't send, use the Magic Proxy:
+```javascript
+const proxyUrl = "MAGIC_PROXY_v1" + btoa("https://locked-site.com/video.mp4");
+```
+
+### Dynamic M3U8 Generation
+Inject custom logic into playlists:
+```javascript
+const m3u8 = "magic_m3u8:" + btoa("#EXTM3U\n...");
+```
+</details>
 
 ---
 *Powered by SkyStream Gen 2 Architecture*
