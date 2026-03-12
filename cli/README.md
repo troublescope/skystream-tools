@@ -41,7 +41,7 @@ skystream init <project-name> --package-name <id> --plugin-name <name> [options]
 
 **Options:**
 - `-p, --package-name <id>`: **(Required)** Unique Repository ID (e.g., `com.dev.stars`).
-- `-n, --plugin-name <name>`: **(Required)** First plugin name (e.g., `AYNA 2`).
+- `-n, --plugin-name <name>`: **(Required)** First plugin name (e.g., `YTS`).
 - `-d, --description <desc>`: Repository description (Default: `SkyStream plugins repository`).
 - `-a, --author <author>`: Author name (Default: `Developer`).
 
