@@ -18,7 +18,7 @@ If you are a developer looking to create plugins, the best place to start is our
 
 ### Installation
 
-Install the SkyStream CLI globally via NPM to start building your own plugin "Universe":
+Install the SkyStream CLI globally via NPM to start building your own SkyStream repo:
 
 ```bash
 npm install -g skystream-cli
