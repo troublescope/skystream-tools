@@ -12,7 +12,7 @@ const program = new Command();
 program
   .name('skystream')
   .description('SkyStream Plugin Development Kit CLI (Sky Gen 2)')
-  .version('1.3.1');
+  .version('1.3.4');
 
 // Schemas
 const pluginSchema = z.object({
@@ -66,21 +66,30 @@ const JS_TEMPLATE = `(function() {
                         new MultimediaItem({ 
                             title: "Example Movie (Carousel)", 
                             url: \`\${manifest.baseUrl}/movie\`, 
-                            posterUrl: \`https://placehold.co/400x600.png?text=Trending+Poster\`, 
+                            posterUrl: \`https://placehold.co/400x600.png?text=Trending+Movie\`, 
                             type: "movie", // Valid types: movie, series, anime, livestream
                             bannerUrl: \`https://placehold.co/1280x720.png?text=Trending+Banner\`, // (optional)
                             description: "Plot summary here...", // (optional)
                             headers: { "Referer": \`\${manifest.baseUrl}\` } // (optional)
                         })
                     ],
-                    "Latest Releases": [
+                    "Latest Series": [
                         new MultimediaItem({ 
-                            title: "Example Movie (Thumb)", 
-                            url: \`\${manifest.baseUrl}/movie2\`, 
-                            posterUrl: \`https://placehold.co/400x600.png?text=Thumbnail+Poster\`, 
-                            type: "movie", // Valid types: movie, series, anime, livestream
+                            title: "Example Series (Thumb)", 
+                            url: \`\${manifest.baseUrl}/series\`, 
+                            posterUrl: \`https://placehold.co/400x600.png?text=Series+Poster\`, 
+                            type: "series", // Valid types: movie, series, anime, livestream
                             description: "This category appears as a thumbnail row.", // (optional)
-                            headers: { "Referer": \`\${manifest.baseUrl}\` } // (optional)
+                            headers: { "Referer": \`\${manifest.baseUrl}\` }, // (optional)
+                            episodes: [
+                                new Episode({
+                                    name: "Episode 1",
+                                    url: \`\${manifest.baseUrl}/series/1\`,
+                                    season: 1,
+                                    episode: 1,
+                                    posterUrl: \`https://placehold.co/400x600.png?text=EP1+Poster\`
+                                })
+                            ]
                         })
                     ]
                 } 
@@ -98,22 +107,31 @@ const JS_TEMPLATE = `(function() {
     async function search(query, cb) {
         try {
             // Standard: Return a List of items
+            // Samples show both a movie and a series
             cb({ 
                 success: true, 
                 data: [
                         new MultimediaItem({ 
-                            title: "Example Movie", 
+                            title: "Example Movie (Search Result)", 
                             url: \`\${manifest.baseUrl}/movie\`, 
-                            posterUrl: \`\${manifest.baseUrl}/poster.jpg\`, 
-                            type: "movie", // Valid types: movie, series, anime, livestream
-                            bannerUrl: \`\${manifest.baseUrl}/banner.jpg\`, // (optional)
-                            description: "Plot summary here...", // (optional)
-                            headers: { "Referer": \`\${manifest.baseUrl}\` } // (optional)
+                            posterUrl: \`https://placehold.co/400x600.png?text=Search+Movie\`, 
+                            type: "movie", 
+                            bannerUrl: \`https://placehold.co/1280x720.png?text=Search+Banner\`,
+                            description: "Plot summary here...", 
+                            headers: { "Referer": \`\${manifest.baseUrl}\` } 
+                        }),
+                        new MultimediaItem({ 
+                            title: "Example Series (Search Result)", 
+                            url: \`\${manifest.baseUrl}/series\`, 
+                            posterUrl: \`https://placehold.co/400x600.png?text=Search+Series\`, 
+                            type: "series", 
+                            description: "A series found in search.", 
+                            headers: { "Referer": \`\${manifest.baseUrl}\` } 
                         })
                 ] 
             });
         } catch (e) {
-            cb({ success: false, errorCode: "SEARCH_ERROR", message: (e instanceof Error) ? e.message : String(e) });
+            cb({ success: false, errorCode: "SEARCH_ERROR", message: e.stack });
         }
     }
 
@@ -125,31 +143,32 @@ const JS_TEMPLATE = `(function() {
     async function load(url, cb) {
         try {
             // Standard: Return a single item with full metadata
+            // Sample shows a series with episodes
             cb({ 
                 success: true, 
                 data: new MultimediaItem({
-                    title: "Example Movie Full Details",
+                    title: "Example Series Full Details",
                     url: url,
-                    posterUrl: \`\${manifest.baseUrl}/poster.jpg\`,
-                    type: "movie", // Valid types: movie, series, anime, livestream
-                    bannerUrl: \`\${manifest.baseUrl}/banner.jpg\`, // (optional)
-                    description: "This is a detailed description of the movie.", // (optional)
-                    headers: { "Referer": \`\${manifest.baseUrl}\` }, // (optional)
+                    posterUrl: \`https://placehold.co/400x600.png?text=Series+Details\`,
+                    type: "series", 
+                    bannerUrl: \`https://placehold.co/1280x720.png?text=Series+Banner\`,
+                    description: "This is a detailed description of the media.", 
+                    headers: { "Referer": \`\${manifest.baseUrl}\` }, 
                     episodes: [
                         new Episode({ 
                             name: "Episode 1", 
                             url: \`\${manifest.baseUrl}/watch/1\`, 
-                            season: 1, // (optional)
-                            episode: 1, // (optional)
-                            description: "Episode summary...", // (optional)
-                            posterUrl: \`\${manifest.baseUrl}/ep-poster.jpg\`, // (optional)
-                            headers: { "Referer": \`\${manifest.baseUrl}\` } // (optional)
+                            season: 1, 
+                            episode: 1, 
+                            description: "Episode summary...", 
+                            posterUrl: \`https://placehold.co/400x600.png?text=Episode+Poster\`,
+                            headers: { "Referer": \`\${manifest.baseUrl}\` } 
                         })
                     ]
                 })
             });
         } catch (e) {
-            cb({ success: false, errorCode: "LOAD_ERROR", message: (e instanceof Error) ? e.message : String(e) });
+            cb({ success: false, errorCode: "LOAD_ERROR", message: e.stack });
         }
     }
 
