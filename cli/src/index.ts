@@ -12,7 +12,7 @@ const program = new Command();
 program
   .name('skystream')
   .description('SkyStream Plugin Development Kit CLI (Sky Gen 2)')
-  .version('1.2.9');
+  .version('1.3.0');
 
 // Schemas
 const pluginSchema = z.object({
@@ -498,7 +498,17 @@ program.command('test')
       globalThis.StreamResult = StreamResult;
     `;
 
-    const runtime = new Function('manifest', 'console', 'http_get', 'http_post', '_fetch', 'fetch', 'btoa', 'atob', 'globalThis', entityDefs + jsContent);
+    // Wrap the plugin code and classes in a combined block to ensure scope visibility
+    const combinedScript = `
+      ${entityDefs}
+      try {
+        ${jsContent}
+      } catch (e) {
+        console.error("Critical Runtime Error: " + e.stack);
+      }
+    `;
+
+    const runtime = new Function('manifest', 'console', 'http_get', 'http_post', '_fetch', 'fetch', 'btoa', 'atob', 'globalThis', combinedScript);
     runtime(context.manifest, context.console, context.http_get, context.http_post, context._fetch, context.fetch, context.btoa, context.atob, context.globalThis);
 
     const fn = context.globalThis[options.function];
