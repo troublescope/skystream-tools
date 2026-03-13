@@ -83,6 +83,18 @@ Navigate to your plugin folder (e.g., `my-plugin/`) and open `plugin.js`. This i
 ```
 </details>
 
+### Dashboard Layout Rules
+
+The SkyStream dashboard organizes content based on the category names returned by your plugin's `getHome` function:
+
+| Category Name | Behavior |
+| :--- | :--- |
+| **"Trending"** | **Reserved Name**. Promoted to the large **Hero Carousel** at the top. Items here are hidden from the thumbnail rows below to avoid duplication. |
+| **Any other name** | Rendered as a horizontal **Thumbnail Row**. If "Trending" is missing, the **first category** in your data object will be used for the carousel. |
+
+> [!TIP]
+> To show an item in both the carousel and the rows, add it to both "Trending" and another category.
+
 ### Step 4: Local Testing
 Verify your scraper logic directly in your terminal before deploying.
 
