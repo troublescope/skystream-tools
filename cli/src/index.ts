@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import * as path from 'path';
+import * as vm from 'vm';
+import * as crypto from 'crypto';
 import fs from 'fs-extra';
 import { z } from 'zod';
 import archiver from 'archiver';
@@ -12,7 +14,7 @@ const program = new Command();
 program
   .name('skystream')
   .description('SkyStream Plugin Development Kit CLI (Sky Gen 2)')
-  .version('1.3.5');
+  .version('1.3.7');
 
 // Schemas
 const pluginSchema = z.object({
@@ -500,6 +502,42 @@ program.command('test')
       },
       btoa: (s: string) => Buffer.from(s).toString('base64'),
       atob: (s: string) => Buffer.from(s, 'base64').toString('utf8'),
+      sendMessage: async (id: string, arg: string) => {
+        if (id === 'crypto_decrypt_aes') {
+          const { data, key, iv } = JSON.parse(arg);
+          try {
+            // Standardize key and iv to correct lengths
+            // They are often passed as base64 strings
+            const decodeBuffer = (s: string) => {
+              return s.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(s) ? Buffer.from(s, 'base64') : Buffer.from(s, 'utf8');
+            };
+
+            const k = decodeBuffer(key);
+            const ivBuf = Buffer.alloc(16, 0);
+            decodeBuffer(iv).copy(ivBuf);
+            
+            let algo = 'aes-256-cbc';
+            let finalKey = Buffer.alloc(32, 0);
+            if (k.length <= 16) {
+                algo = 'aes-128-cbc';
+                finalKey = Buffer.alloc(16, 0);
+            } else if (k.length <= 24) {
+                algo = 'aes-192-cbc';
+                finalKey = Buffer.alloc(24, 0);
+            }
+            k.copy(finalKey);
+
+            const decipher = crypto.createDecipheriv(algo, finalKey, ivBuf);
+            let decrypted = decipher.update(data, 'base64', 'utf8');
+            decrypted += decipher.final('utf8');
+            return decrypted;
+          } catch (e: any) {
+            console.error('  [Mock ERR]: AES Decryption failed:', e.message);
+            return data;
+          }
+        }
+        return '';
+      },
       globalThis: {} as any,
     };
 
@@ -557,8 +595,8 @@ program.command('test')
       }
     `;
 
-    const runtime = new Function('manifest', 'console', 'http_get', 'http_post', '_fetch', 'fetch', 'btoa', 'atob', 'globalThis', combinedScript);
-    runtime(context.manifest, context.console, context.http_get, context.http_post, context._fetch, context.fetch, context.btoa, context.atob, context.globalThis);
+    const runtime = new Function('manifest', 'console', 'http_get', 'http_post', '_fetch', 'fetch', 'btoa', 'atob', 'sendMessage', 'globalThis', combinedScript);
+    runtime(context.manifest, context.console, context.http_get, context.http_post, context._fetch, context.fetch, context.btoa, context.atob, context.sendMessage, context.globalThis);
 
     const fn = context.globalThis[options.function];
     if (typeof fn !== 'function') { console.error('Error: exported function not found'); process.exit(1); }
