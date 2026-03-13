@@ -15,7 +15,7 @@ const program = new Command();
 program
   .name('skystream')
   .description('SkyStream Plugin Development Kit CLI (Sky Gen 2)')
-  .version('1.4.3');
+  .version('1.4.4');
 
 // Schemas
 const pluginSchema = z.object({
@@ -51,12 +51,18 @@ const JS_TEMPLATE = `(function() {
      */
     // var manifest is injected at runtime
 
+    // 1. (Optional) Register your plugin settings
+    registerSettings([
+        { id: "quality", name: "Default Quality", type: "select", options: ["1080p", "720p"], default: "1080p" },
+        { id: "prefer_dub", name: "Prefer Dubbed", type: "toggle", default: false }
+    ]);
 
     /**
      * Loads the home screen categories.
      * @param {(res: Response) => void} cb 
      */
     async function getHome(cb) {
+        // Example: Using solveCaptcha if needed (await solveCaptcha(siteKey, url))
         try {
             // Dashboard Layout:
             // - "Trending" is a reserved category promoted to the Hero Carousel.
@@ -81,25 +87,8 @@ const JS_TEMPLATE = `(function() {
                             title: "Example Series (Thumb)", 
                             url: \`\${manifest.baseUrl}/series\`, 
                             posterUrl: \`https://placehold.co/400x600.png?text=Series+Poster\`, 
-                            type: "series", // Valid types: movie, series, anime, livestream
-                            description: "This category appears as a thumbnail row.", // (optional)
-                            headers: { "Referer": \`\${manifest.baseUrl}\` }, // (optional)
-                            episodes: [
-                                new Episode({
-                                    name: "Episode 1",
-                                    url: \`\${manifest.baseUrl}/series/1\`,
-                                    season: 1,
-                                    episode: 1,
-                                    posterUrl: \`https://placehold.co/400x600.png?text=EP1+Poster\`
-                                }),
-                                new Episode({
-                                    name: "Episode 2",
-                                    url: \`\${manifest.baseUrl}/series/2\`,
-                                    season: 1,
-                                    episode: 2,
-                                    posterUrl: \`https://placehold.co/400x600.png?text=EP2+Poster\`
-                                })
-                            ]
+                            type: "series",
+                            description: "This category appears as a thumbnail row."
                         })
                     ]
                 } 
@@ -112,9 +101,10 @@ const JS_TEMPLATE = `(function() {
     /**
      * Searches for media items.
      * @param {string} query
+     * @param {number} page
      * @param {(res: Response) => void} cb 
      */
-    async function search(query, cb) {
+    async function search(query, page, cb) {
         try {
             // Standard: Return a List of items
             // Samples show both a movie and a series
@@ -163,6 +153,24 @@ const JS_TEMPLATE = `(function() {
                     type: "series", 
                     bannerUrl: \`https://placehold.co/1280x720.png?text=Series+Banner\`,
                     description: "This is a detailed description of the media.", 
+                    year: 2024,
+                    score: 8.5,
+                    duration: 120, // (optional, in minutes)
+                    status: "ongoing", // ongoing, completed, upcoming
+                    contentRating: "PG-13",
+                    logoUrl: \`https://placehold.co/200x100.png?text=Logo\`,
+                    isAdult: false,
+                    tags: ["Action", "Adventure"],
+                    cast: [
+                        new Actor({ name: "John Doe", role: "Protagonist", image: "https://placehold.co/200x300.png" })
+                    ],
+                    trailers: [
+                        new Trailer({ name: "Official Trailer", url: "https://www.youtube.com/watch?v=..." })
+                    ],
+                    nextAiring: new NextAiring({ episode: 5, season: 1, airDate: "2024-04-01" }),
+                    recommendations: [
+                        new MultimediaItem({ title: "Similar Show", url: \`\${manifest.baseUrl}/similar\`, posterUrl: "...", type: "series" })
+                    ],
                     headers: { "Referer": \`\${manifest.baseUrl}\` }, 
                     episodes: [
                         new Episode({ 
@@ -434,7 +442,7 @@ program.command('validate')
                 }
                 count++;
             } catch (e: any) {
-                console.error(`✗ ${item} invalid: ${e.message}`);
+                console.error(`\u2717 ${item} invalid: ${e.message}`);
                 if (e instanceof z.ZodError) {
                     console.error(JSON.stringify(e.format(), null, 2));
                 }
@@ -511,14 +519,24 @@ program.command('test')
           headers: res.headers 
         };
       },
+      registerSettings: (schema: any) => {
+        console.log('  [Mock SDK]: Plugin registered settings:', JSON.stringify(schema, null, 2));
+      },
+      solveCaptcha: async (siteKey: string, url: string) => {
+        console.log('  [Mock SDK]: solveCaptcha requested for ' + url + ' with key ' + siteKey);
+        return "mock_captcha_token";
+      },
+      crypto: {
+        decryptAES: (data: string, key: string, iv: string) => {
+           return "decrypted(" + data + ")";
+        }
+      },
       btoa: (s: string) => Buffer.from(s).toString('base64'),
       atob: (s: string) => Buffer.from(s, 'base64').toString('utf8'),
       sendMessage: async (id: string, arg: string) => {
         if (id === 'crypto_decrypt_aes') {
           const { data, key, iv } = JSON.parse(arg);
           try {
-            // Standardize key and iv to correct lengths
-            // They are often passed as base64 strings
             const decodeBuffer = (s: string) => {
               return s.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(s) ? Buffer.from(s, 'base64') : Buffer.from(s, 'utf8');
             };
@@ -553,41 +571,50 @@ program.command('test')
     };
 
     const entityDefs = `
+      class Actor {
+        constructor(params) {
+          Object.assign(this, params);
+        }
+      }
+
+      class Trailer {
+        constructor(params) {
+          Object.assign(this, params);
+        }
+      }
+
+      class NextAiring {
+        constructor(params) {
+          Object.assign(this, params);
+        }
+      }
+
       class MultimediaItem {
-        constructor({ title, url, posterUrl, type, bannerUrl, description, episodes, headers, provider }) {
-          this.title = title;
-          this.url = url;
-          this.posterUrl = posterUrl;
-          this.type = type || 'movie';
-          this.bannerUrl = bannerUrl;
-          this.description = description;
-          this.episodes = episodes;
-          this.headers = headers;
-          this.provider = provider;
+        constructor(params) {
+          Object.assign(this, {
+            type: 'movie',
+            status: 'ongoing',
+            vpnStatus: 'none',
+            isAdult: false,
+            ...params
+          });
         }
       }
 
       class Episode {
-        constructor({ name, url, season, episode, description, posterUrl, headers }) {
-          this.name = name;
-          this.url = url;
-          this.season = season || 0;
-          this.episode = episode || 0;
-          this.description = description;
-          this.posterUrl = posterUrl;
-          this.headers = headers;
+        constructor(params) {
+          Object.assign(this, {
+            season: 0,
+            episode: 0,
+            dubStatus: 'none',
+            ...params
+          });
         }
       }
 
       class StreamResult {
-        constructor({ url, source, quality, headers, subtitles, drmKid, drmKey, licenseUrl }) {
-          this.url = url;
-          this.source = source || quality || 'Auto';
-          this.headers = headers;
-          this.subtitles = subtitles;
-          this.drmKid = drmKid;
-          this.drmKey = drmKey;
-          this.licenseUrl = licenseUrl;
+        constructor(params) {
+          Object.assign(this, params);
         }
       }
 
@@ -640,26 +667,27 @@ program.command('test')
     const callback = (res: any) => {
       console.log('\n--- Result ---');
       if (res && res.success === false) {
-        console.log(`\x1b[31mStatus: FAILED\x1b[0m`);
-        console.log(`\x1b[31mError Code: ${res.errorCode || 'UNKNOWN'}\x1b[0m`);
-        if (res.message) console.log(`\x1b[31mMessage: ${res.message}\x1b[0m`);
+        console.log('\x1b[31mStatus: FAILED\x1b[0m');
+        console.log('\x1b[31mError Code: ' + (res.errorCode || 'UNKNOWN') + '\x1b[0m');
+        if (res.message) console.log('\x1b[31mMessage: ' + res.message + '\x1b[0m');
       } else {
-        console.log(`\x1b[32mStatus: SUCCESS\x1b[0m`);
+        console.log('\x1b[32mStatus: SUCCESS\x1b[0m');
       }
       console.log(JSON.stringify(res, null, 2));
     };
 
     try {
         if (options.function === 'getHome') await fn(callback);
+        else if (options.function === 'search') await fn(options.query, 1, callback);
         else if (!options.query || options.query.trim() === "") {
-            console.warn(`\x1b[33mWarning: Function '${options.function}' usually requires a query/URL (-q), but none was provided.\x1b[0m`);
+            console.warn('\x1b[33mWarning: Function \'' + options.function + '\' usually requires a query/URL (-q), but none was provided.\x1b[0m');
             await fn(options.query, callback);
         } else {
             await fn(options.query, callback);
         }
     } catch (e: any) {
-        console.error(`\n\x1b[31m--- CRITICAL ERROR DURING EXECUTION ---\x1b[0m`);
-        console.error(`\x1b[31m${e.stack || e.message}\x1b[0m\n`);
+        console.error('\n\x1b[31m--- CRITICAL ERROR DURING EXECUTION ---\x1b[0m');
+        console.error('\x1b[31m' + (e.stack || e.message) + '\x1b[0m\n');
         process.exit(2);
     }
   });
@@ -681,7 +709,7 @@ program.command('deploy')
 
     // Standardize URL: Append /dist automatically
     const baseRaw = options.url.endsWith('/') ? options.url.slice(0, -1) : options.url;
-    const distUrl = `${baseRaw}/dist`;
+    const distUrl = baseRaw + "/dist";
 
     for (const item of items) {
         const itemPath = path.join(rootDir, item);
@@ -689,7 +717,7 @@ program.command('deploy')
         if (await fs.pathExists(mPath) && (await fs.stat(itemPath)).isDirectory()) {
             const manifest = await fs.readJson(mPath);
             const packageName = manifest.packageName || manifest.id || item;
-            const bundleName = `${packageName}.sky`;
+            const bundleName = packageName + ".sky";
             const outPath = path.join(distDir, bundleName);
             
             const arch = archiver('zip', { zlib: { level: 9 } });
@@ -698,14 +726,14 @@ program.command('deploy')
             arch.file(path.join(itemPath, 'plugin.js'), { name: 'plugin.js' });
             await arch.finalize();
 
-            catalog.push({ ...manifest, url: `${distUrl}/${bundleName}` });
-            console.log(`✓ Bundled ${manifest.packageName}`);
+            catalog.push({ ...manifest, url: distUrl + "/" + bundleName });
+            console.log("✓ Bundled " + manifest.packageName);
         }
     }
 
     const finalRepo = {
         ...repo,
-        pluginLists: [ `${distUrl}/plugins.json` ]
+        pluginLists: [ distUrl + "/plugins.json" ]
     };
 
     await fs.writeJson(repoPath, finalRepo, { spaces: 2 });
@@ -716,17 +744,17 @@ program.command('deploy')
     if (await fs.pathExists(readmePath)) {
         let readme = await fs.readFile(readmePath, 'utf8');
         const placeholder = 'https://raw.githubusercontent.com/USER_NAME/REPO_NAME/main/repo.json';
-        const liveUrl = `${baseRaw}/repo.json`;
+        const liveUrl = baseRaw + "/repo.json";
         if (readme.includes(placeholder)) {
             readme = readme.replace(placeholder, liveUrl);
             await fs.writeFile(readmePath, readme);
-            console.log(`✓ Updated README.md with live URL`);
+            console.log("✓ Updated README.md with live URL");
         }
     }
 
-    console.log(`\nDeployment Complete. Assets generated in dist/`);
-    console.log(`\nYour Repo Link for the app:`);
-    console.log(`> ${baseRaw}/repo.json`);
+    console.log("\nDeployment Complete. Assets generated in dist/");
+    console.log("\nYour Repo Link for the app:");
+    console.log("> " + baseRaw + "/repo.json");
   });
 
 program.parse();

@@ -139,15 +139,26 @@ Once your GitHub Action finishes deploying (check the "Actions" tab on GitHub), 
 
 SkyStream provides built-in global classes to ensure data consistency. Using these is highly recommended for better structure and future-proofing.
 
-**MultimediaItem**
+**MultimediaItem** (Rich Metadata Support)
 ```javascript
 const item = new MultimediaItem({
   title: "Example Title",
-  url: `${manifest.baseUrl}/movie`,
-  posterUrl: `${manifest.baseUrl}/poster.jpg`,
+  url: "https://site.com/movie/1",
+  posterUrl: "https://site.com/poster.jpg",
   type: "movie", // Options: movie, series, anime, livestream
-  description: "A great story...", // (optional)
-  bannerUrl: `${manifest.baseUrl}/banner.jpg` // (optional)
+  year: 2024,
+  score: 8.5,
+  duration: 120, // in minutes
+  status: "ongoing", // ongoing, completed, upcoming
+  contentRating: "TV-14",
+  logoUrl: "https://site.com/logo.png",
+  bannerUrl: "https://site.com/banner.jpg",
+  vpnStatus: "none", // none, mightBeNeeded, torrent
+  isAdult: false,
+  description: "A detailed synopsis...",
+  cast: [new Actor({ name: "John Doe", role: "Protagonist", image: "..." })],
+  trailers: [new Trailer({ url: "https://youtube.com/watch?v=..." })],
+  nextAiring: new NextAiring({ episode: 5, season: 1, unixTime: 1710360000 })
 });
 ```
 
@@ -155,18 +166,25 @@ const item = new MultimediaItem({
 ```javascript
 const ep = new Episode({
   name: "S01E01",
-  url: `${manifest.baseUrl}/watch/1`,
+  url: "https://site.com/watch/1",
   season: 1,
-  episode: 1
+  episode: 1,
+  rating: 4.5,
+  runtime: 24,
+  airDate: "2024-03-13",
+  dubStatus: "dubbed" // none, dubbed, subbed
 });
 ```
 
 **StreamResult**
 ```javascript
 const stream = new StreamResult({
-  url: "https://cdn.com/video.mp4",
+  url: "https://cdn.com/video.m3u8",
   quality: "1080p",
-  headers: { "Referer": `${manifest.baseUrl}` }
+  headers: { "Referer": "https://site.com/" },
+  drmKid: "...",
+  drmKey: "...",
+  licenseUrl: "..."
 });
 ```
 </details>
@@ -176,20 +194,45 @@ const stream = new StreamResult({
 
 If you prefer raw objects, ensure they match these definitions:
 
-### MultimediaItem
+### MultimediaItem (Full Schema)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `title` | `string` | Yes | Display name. |
 | `url` | `string` | Yes | Unique ID (usually the source URL). |
 | `posterUrl` | `string` | Yes | Vertical image URL. |
 | `type` | `string` | Yes | `movie`, `series`, `anime`, or `livestream`. |
-| `episodes` | `array` | No | List of `Episode` objects. |
+| `year` | `number` | No | Release year. |
+| `score` | `number` | No | Rating (0.0 - 10.0). |
+| `duration` | `number` | No | Total runtime in minutes. |
+| `status` | `string` | No | `ongoing`, `completed`, or `upcoming`. |
+| `logoUrl` | `string` | No | Transparent logo for premium header. |
+| `contentRating` | `string` | No | Age rating (e.g., "PG-13", "18+"). |
+| `vpnStatus` | `string` | No | `none`, `mightBeNeeded`, or `torrent`. |
+| `isAdult` | `boolean` | No | Adult content flag. |
+| `cast` | `array` | No | List of `Actor` objects. |
+| `trailers` | `array` | No | List of `Trailer` objects. |
+| `nextAiring` | `object` | No | `NextAiring` object. |
+| `recommendations`| `array` | No | List of `MultimediaItem` objects. |
+| `syncData` | `object` | No | Map of external IDs `{ mal: "123", tmdb: "456" }`. |
+
+### Episode (Full Schema)
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `name` | `string` | Yes | Episode title or number label. |
+| `url` | `string` | Yes | Unique URL for streaming. |
+| `season` | `number` | Yes | Season number. |
+| `episode` | `number` | Yes | Episode number. |
+| `rating` | `number` | No | Episode specific rating. |
+| `runtime` | `number` | No | Episode runtime in minutes. |
+| `airDate` | `string` | No | Release date (YYYY-MM-DD). |
+| `dubStatus` | `string` | No | `none`, `dubbed`, or `subbed`. |
 
 ### StreamResult
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `url` | `string` | Yes | Playable link (MP4/HLS/Magnet). |
-| `quality` | `string` | No | Label (e.g., "4K"). |
+| `quality` | `string` | No | Label (e.g., "1080p"). |
+| `headers` | `object` | No | HTTP headers required for playback. |
 | `subtitles` | `array` | No | `{ url, label, lang }`. |
 | `drmKid` | `string` | No | Widevine Key ID. |
 | `licenseUrl` | `string` | No | DRM License server. |
@@ -198,10 +241,30 @@ If you prefer raw objects, ensure they match these definitions:
 <details>
 <summary><b>Advanced Features</b></summary>
 
+### Native SDK Helpers
+SkyStream Gen 2 provides high-level SDK helpers for complex tasks like settings, captcha, and crypto.
+
+| Helper | Signature | Description |
+| :--- | :--- | :--- |
+| **Settings** | `registerSettings(schema)` | Register plugin settings (Toggles, Selects, Input). |
+| **Captcha** | `await solveCaptcha(key, url)` | Opens a captcha solver for the user. Returns token. |
+| **Crypto** | `await crypto.decryptAES(data, key, iv)`| Optimized AES decryption bridge. |
+
+**Using Settings:**
+```javascript
+registerSettings([
+  { id: "quality", name: "Default Quality", type: "select", options: ["1080p", "720p"], default: "1080p" },
+  { id: "dubbed", name: "Prefer Dubbed", type: "toggle", default: false }
+]);
+
+// Access via global settings object
+const preferredQuality = settings.quality;
+```
+
 ### Byte-Level Proxying
 If a video host requires specific headers that the player can't send, use the Magic Proxy:
 ```javascript
-const proxyUrl = "MAGIC_PROXY_v1" + btoa(`${manifest.baseUrl}/video.mp4`);
+const proxyUrl = "MAGIC_PROXY_v1" + btoa(`https://site.com/video.mp4`);
 ```
 
 ### Dynamic M3U8 Generation

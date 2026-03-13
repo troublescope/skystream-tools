@@ -57,11 +57,47 @@ export class SkyStreamRuntime {
       clearTimeout,
       setInterval,
       clearInterval,
+      registerSettings: (schema: any[]) => {
+        console.log('[Mock SDK]: Plugin registered settings:', JSON.stringify(schema, null, 2));
+      },
+      solveCaptcha: async (siteKey: string, url: string) => {
+        console.log('[Mock SDK]: solveCaptcha requested for ' + url);
+        return "mock_token";
+      },
+      crypto: {
+        decryptAES: (data: string, key: string, iv: string) => {
+          return "decrypted(" + data + ")";
+        }
+      },
+      Actor: class Actor {
+        constructor(data: any) { Object.assign(this, data); }
+      },
+      Trailer: class Trailer {
+        constructor(data: any) { Object.assign(this, data); }
+      },
+      NextAiring: class NextAiring {
+        constructor(data: any) { Object.assign(this, data); }
+      },
       MultimediaItem: class MultimediaItem {
-        constructor(data: any) { Object.assign(this, data); if (!(this as any).type) (this as any).type = 'movie'; }
+        constructor(data: any) { 
+          Object.assign(this, {
+            type: 'movie',
+            status: 'ongoing',
+            vpnStatus: 'none',
+            isAdult: false,
+            ...data
+          }); 
+        }
       },
       Episode: class Episode {
-        constructor(data: any) { Object.assign(this, data); }
+        constructor(data: any) { 
+          Object.assign(this, {
+            season: 0,
+            episode: 0,
+            dubStatus: 'none',
+            ...data
+          }); 
+        }
       },
       StreamResult: class StreamResult {
         constructor(data: any) { Object.assign(this, data); }
