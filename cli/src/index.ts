@@ -15,7 +15,7 @@ const program = new Command();
 program
   .name('skystream')
   .description('SkyStream Plugin Development Kit CLI (Sky Gen 2)')
-  .version('1.4.2');
+  .version('1.4.3');
 
 // Schemas
 const pluginSchema = z.object({
@@ -204,7 +204,7 @@ const JS_TEMPLATE = `(function() {
                 data: [
                     new StreamResult({ 
                         url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", 
-                        quality: "1080p", // (optional)
+                        source: "Server [1080p]", // (optional)
                         headers: { "Referer": \`\${manifest.baseUrl}\` }, // (optional)
                         subtitles: [
                             { url: \`\${manifest.baseUrl}/sub.vtt\`, label: "English", lang: "en" } // (optional)
@@ -580,9 +580,9 @@ program.command('test')
       }
 
       class StreamResult {
-        constructor({ url, quality, headers, subtitles, drmKid, drmKey, licenseUrl }) {
+        constructor({ url, source, quality, headers, subtitles, drmKid, drmKey, licenseUrl }) {
           this.url = url;
-          this.quality = quality || 'Auto';
+          this.source = source || quality || 'Auto';
           this.headers = headers;
           this.subtitles = subtitles;
           this.drmKid = drmKid;
@@ -598,7 +598,14 @@ program.command('test')
     Object.assign(sandbox, context);
     
     // Ensure Node globals are present
-    sandbox.console = console;
+    sandbox.atob = (str: string) => Buffer.from(str, 'base64').toString('binary');
+    sandbox.btoa = (str: string) => Buffer.from(str, 'binary').toString('base64');
+    sandbox.URL = URL;
+    sandbox.console = {
+      log: (...args: any[]) => console.log('[JS LOG]', ...args),
+      error: (...args: any[]) => console.error('[JS ERROR]', ...args),
+      warn: (...args: any[]) => console.warn('[JS WARN]', ...args),
+    };
     sandbox.axios = axios;
     sandbox.Buffer = Buffer;
     sandbox.setTimeout = setTimeout;
