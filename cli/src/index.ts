@@ -12,7 +12,7 @@ const program = new Command();
 program
   .name('skystream')
   .description('SkyStream Plugin Development Kit CLI (Sky Gen 2)')
-  .version('1.2.8');
+  .version('1.2.9');
 
 // Schemas
 const pluginSchema = z.object({
@@ -454,7 +454,51 @@ program.command('test')
       globalThis: {} as any,
     };
 
-    const runtime = new Function('manifest', 'console', 'http_get', 'http_post', '_fetch', 'fetch', 'btoa', 'atob', 'globalThis', jsContent);
+    const entityDefs = `
+      class MultimediaItem {
+        constructor({ title, url, posterUrl, type, bannerUrl, description, episodes, headers, provider }) {
+          this.title = title;
+          this.url = url;
+          this.posterUrl = posterUrl;
+          this.type = type || 'movie';
+          this.bannerUrl = bannerUrl;
+          this.description = description;
+          this.episodes = episodes;
+          this.headers = headers;
+          this.provider = provider;
+        }
+      }
+
+      class Episode {
+        constructor({ name, url, season, episode, description, posterUrl, headers }) {
+          this.name = name;
+          this.url = url;
+          this.season = season || 0;
+          this.episode = episode || 0;
+          this.description = description;
+          this.posterUrl = posterUrl;
+          this.headers = headers;
+        }
+      }
+
+      class StreamResult {
+        constructor({ url, quality, headers, subtitles, drmKid, drmKey, licenseUrl }) {
+          this.url = url;
+          this.quality = quality || 'Auto';
+          this.headers = headers;
+          this.subtitles = subtitles;
+          this.drmKid = drmKid;
+          this.drmKey = drmKey;
+          this.licenseUrl = licenseUrl;
+        }
+      }
+
+      globalThis.MultimediaItem = MultimediaItem;
+      globalThis.Episode = Episode;
+      globalThis.StreamResult = StreamResult;
+    `;
+
+    const runtime = new Function('manifest', 'console', 'http_get', 'http_post', '_fetch', 'fetch', 'btoa', 'atob', 'globalThis', entityDefs + jsContent);
     runtime(context.manifest, context.console, context.http_get, context.http_post, context._fetch, context.fetch, context.btoa, context.atob, context.globalThis);
 
     const fn = context.globalThis[options.function];
