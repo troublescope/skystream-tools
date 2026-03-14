@@ -15,7 +15,7 @@ const program = new Command();
 program
   .name('skystream')
   .description('SkyStream Plugin Development Kit CLI (Sky Gen 2)')
-  .version('1.4.9');
+  .version('1.5.0');
 
 // Schemas
 const pluginSchema = z.object({
@@ -579,6 +579,11 @@ program.command('test')
           }
         }
         return '';
+      },
+      crypto: {
+        decryptAES: async (data: string, key: string, iv: string) => {
+          return context.sendMessage('crypto_decrypt_aes', JSON.stringify({ data, key, iv }));
+        }
       },
       globalThis: {} as any,
     };
