@@ -101,10 +101,9 @@ const JS_TEMPLATE = `(function() {
     /**
      * Searches for media items.
      * @param {string} query
-     * @param {number} page
      * @param {(res: Response) => void} cb 
      */
-    async function search(query, page, cb) {
+    async function search(query, cb) {
         try {
             // Standard: Return a List of items
             // Samples show both a movie and a series
@@ -494,38 +493,32 @@ program.command('test')
           if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
             finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
           }
-          const res = await axios.get(url, { headers: finalHeaders });
+          const res = await axios.get(url, { headers: finalHeaders, method: 'GET' });
           const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
           const response = { status: res.status, statusCode: res.status, body, headers: res.headers };
           if (cb) cb(response);
-          return response.body;
+          return response;
         } catch (e: any) {
-          const res = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
-          if (cb) cb(res);
-          return res.body;
+          const response = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
+          if (cb) cb(response);
+          return response;
         }
       },
-      http_post: async (url: string, headers_or_options: any, body_arg: any, cb: any) => {
+      http_post: async (url: string, headers: any, body: any, cb: any) => {
         try {
-          let headers = headers_or_options;
-          let body = body_arg;
-          if (typeof headers_or_options === 'object' && headers_or_options !== null && !body_arg && (headers_or_options.body || headers_or_options.headers)) {
-             body = headers_or_options.body;
-             headers = headers_or_options.headers;
-          }
           const finalHeaders = { ...(headers || {}) };
           if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
             finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
           }
-          const res = await axios.post(url, body, { headers: finalHeaders });
+          const res = await axios.post(url, body, { headers: finalHeaders, method: 'POST' });
           const resBody = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
           const response = { status: res.status, statusCode: res.status, body: resBody, headers: res.headers };
           if (cb) cb(response);
-          return response.body;
+          return response;
         } catch (e: any) {
-          const res = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
-          if (cb) cb(res);
-          return res.body;
+          const response = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
+          if (cb) cb(response);
+          return response;
         }
       },
       registerSettings: (schema: any) => {
@@ -703,7 +696,7 @@ program.command('test')
 
     try {
         if (options.function === 'getHome') await fn(callback);
-        else if (options.function === 'search') await fn(options.query, 1, callback);
+        else if (options.function === 'search') await fn(options.query, callback);
         else if (!options.query || options.query.trim() === "") {
             console.warn('\x1b[33mWarning: Function \'' + options.function + '\' usually requires a query/URL (-q), but none was provided.\x1b[0m');
             await fn(options.query, callback);
