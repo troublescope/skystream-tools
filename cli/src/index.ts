@@ -169,7 +169,13 @@ const JS_TEMPLATE = `(function() {
                     ],
                     nextAiring: new NextAiring({ episode: 5, season: 1, airDate: "2024-04-01" }),
                     recommendations: [
-                        new MultimediaItem({ title: "Similar Show", url: \`\${manifest.baseUrl}/similar\`, posterUrl: "...", type: "series" })
+                        new MultimediaItem({ title: "Similar Show", url: \`\${manifest.baseUrl}/similar\`, posterUrl: "https://placehold.co/400x600", type: "series" })
+                    ],
+                    playbackPolicy: "none", // 'none' | 'VPN Recommended' | 'torrent' | 'externalPlayerOnly' | 'internalPlayerOnly'
+                    syncData: { "my_service_id": "12345" }, // Optional: external metadata sync
+                    streams: [
+                        // Optional: "Instant Load" - bypass loadStreams by providing links here
+                        new StreamResult({ url: "https://example.com/movie.mp4", source: "Instant High" })
                     ],
                     headers: { "Referer": \`\${manifest.baseUrl}\` }, 
                     episodes: [
@@ -180,7 +186,8 @@ const JS_TEMPLATE = `(function() {
                             episode: 1, 
                             description: "Episode summary...", 
                             posterUrl: \`https://placehold.co/400x600.png?text=Episode+Poster\`,
-                            headers: { "Referer": \`\${manifest.baseUrl}\` } 
+                            headers: { "Referer": \`\${manifest.baseUrl}\` },
+                            streams: [] // Optional: "Instant Load" for episodes
                         }),
                         new Episode({ 
                             name: "Episode 2", 
@@ -206,25 +213,19 @@ const JS_TEMPLATE = `(function() {
      */
     async function loadStreams(url, cb) {
         try {
-            // Standard: Return a List of stream urls
+            // Standard: Return a List of stream objects
             cb({ 
                 success: true, 
                 data: [
                     new StreamResult({ 
                         url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", 
-                        source: "Server [1080p]", // (optional)
-                        headers: { "Referer": \`\${manifest.baseUrl}\` }, // (optional)
-                        subtitles: [
-                            { url: \`\${manifest.baseUrl}/sub.vtt\`, label: "English", lang: "en" } // (optional)
-                        ],
-                        drmKid: "kid_value", // (optional)
-                        drmKey: "key_value", // (optional)
-                        licenseUrl: "https://license-server.com" // (optional)
+                        source: "Direct Quality", 
+                        headers: { "Referer": \`\${manifest.baseUrl}\` }
                     })
                 ] 
             });
         } catch (e) {
-            cb({ success: false, errorCode: "STREAM_ERROR", message: (e instanceof Error) ? e.message : String(e) });
+            cb({ success: false, errorCode: "STREAM_ERROR", message: String(e) });
         }
     }
 
@@ -600,8 +601,10 @@ program.command('test')
           Object.assign(this, {
             type: 'movie',
             status: 'ongoing',
-            vpnStatus: 'none',
+            playbackPolicy: 'none',
             isAdult: false,
+            streams: [],
+            syncData: {},
             ...params
           });
         }
@@ -613,6 +616,8 @@ program.command('test')
             season: 0,
             episode: 0,
             dubStatus: 'none',
+            playbackPolicy: 'none',
+            streams: [],
             ...params
           });
         }

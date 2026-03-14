@@ -153,7 +153,7 @@ const item = new MultimediaItem({
   contentRating: "TV-14",
   logoUrl: "https://site.com/logo.png",
   bannerUrl: "https://site.com/banner.jpg",
-  vpnStatus: "none", // none, mightBeNeeded, torrent
+  playbackPolicy: "none", // none, torrent, "VPN Recommended", "External Player Only", etc.
   isAdult: false,
   description: "A detailed synopsis...",
   cast: [new Actor({ name: "John Doe", role: "Protagonist", image: "..." })],
@@ -172,7 +172,8 @@ const ep = new Episode({
   rating: 4.5,
   runtime: 24,
   airDate: "2024-03-13",
-  dubStatus: "dubbed" // none, dubbed, subbed
+  dubStatus: "dubbed", // none, dubbed, subbed
+  playbackPolicy: "none"
 });
 ```
 
@@ -207,7 +208,7 @@ If you prefer raw objects, ensure they match these definitions:
 | `status` | `string` | No | `ongoing`, `completed`, or `upcoming`. |
 | `logoUrl` | `string` | No | Transparent logo for premium header. |
 | `contentRating` | `string` | No | Age rating (e.g., "PG-13", "18+"). |
-| `vpnStatus` | `string` | No | `none`, `mightBeNeeded`, or `torrent`. |
+| `playbackPolicy` | `string` | No | Playback status/requirements (e.g., "torrent", "External Only"). |
 | `isAdult` | `boolean` | No | Adult content flag. |
 | `cast` | `array` | No | List of `Actor` objects. |
 | `trailers` | `array` | No | List of `Trailer` objects. |
@@ -226,6 +227,8 @@ If you prefer raw objects, ensure they match these definitions:
 | `runtime` | `number` | No | Episode runtime in minutes. |
 | `airDate` | `string` | No | Release date (YYYY-MM-DD). |
 | `dubStatus` | `string` | No | `none`, `dubbed`, or `subbed`. |
+| `playbackPolicy` | `string` | No | Episode specific playback policy. |
+| `streams` | `array` | No | List of `StreamResult` for "Instant Load". |
 
 ### StreamResult
 | Field | Type | Required | Description |

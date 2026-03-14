@@ -28,10 +28,6 @@ export type MultimediaType = 'movie' | 'series' | 'anime' | 'livestream' | 'othe
  */
 export type ShowStatus = 'completed' | 'ongoing' | 'upcoming';
 
-/**
- * Valid VPN statuses
- */
-export type VpnStatus = 'none' | 'mightBeNeeded' | 'torrent';
 
 /**
  * Valid Dub statuses
@@ -88,7 +84,7 @@ export interface IMultimediaItem {
   cast?: IActor[];
   trailers?: ITrailer[];
   recommendations?: IMultimediaItem[];
-  vpnStatus?: VpnStatus;
+  playbackPolicy?: string;
   isAdult?: boolean;
   nextAiring?: INextAiring;
 }
@@ -108,6 +104,8 @@ export interface IEpisode {
   runtime?: number;
   airDate?: string;
   dubStatus?: DubStatus;
+  playbackPolicy?: string;
+  streams?: IStreamResult[];
 }
 
 /**
@@ -174,7 +172,7 @@ declare global {
     cast?: Actor[];
     trailers?: Trailer[];
     recommendations?: MultimediaItem[];
-    vpnStatus?: VpnStatus;
+    playbackPolicy?: string;
     isAdult?: boolean;
     nextAiring?: NextAiring;
   }
@@ -193,6 +191,8 @@ declare global {
     runtime?: number;
     airDate?: string;
     dubStatus?: DubStatus;
+    playbackPolicy?: string;
+    streams?: StreamResult[];
   }
 
   /** Helper Class: StreamResult */
