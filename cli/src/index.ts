@@ -76,7 +76,7 @@ const JS_TEMPLATE = `(function() {
                             title: "Example Movie (Carousel)", 
                             url: \`\${manifest.baseUrl}/movie\`, 
                             posterUrl: \`https://placehold.co/400x600.png?text=Trending+Movie\`, 
-                            type: "movie", // Valid types: movie, series, anime, livestream
+                            type: "movie", // Valid types: movie, series, anime, livestream, other
                             bannerUrl: \`https://placehold.co/1280x720.png?text=Trending+Banner\`, // (optional)
                             description: "Plot summary here...", // (optional)
                             headers: { "Referer": \`\${manifest.baseUrl}\` } // (optional)
