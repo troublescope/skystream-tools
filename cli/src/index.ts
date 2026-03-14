@@ -15,7 +15,7 @@ const program = new Command();
 program
   .name('skystream')
   .description('SkyStream Plugin Development Kit CLI (Sky Gen 2)')
-  .version('1.4.7');
+  .version('1.4.8');
 
 // Schemas
 const pluginSchema = z.object({
@@ -484,8 +484,12 @@ program.command('test')
         log: (...args: any[]) => console.log('  [JS]:', ...args), 
         error: (...args: any[]) => console.error('  [JS ERR]:', ...args) 
       },
-      http_get: async (url: string, headers: any, cb: any) => {
+      http_get: async (url: string, headers_or_options: any, cb: any) => {
         try {
+          let headers = headers_or_options;
+          if (typeof headers_or_options === 'object' && headers_or_options !== null && (headers_or_options.headers || headers_or_options.body)) {
+             headers = headers_or_options.headers;
+          }
           const finalHeaders = { ...(headers || {}) };
           if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
             finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
@@ -494,14 +498,21 @@ program.command('test')
           const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
           const response = { status: res.status, statusCode: res.status, body, headers: res.headers };
           if (cb) cb(response);
-          return response;
+          return response.body;
         } catch (e: any) {
           const res = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
-          if (cb) cb(res); return res;
+          if (cb) cb(res);
+          return res.body;
         }
       },
-      http_post: async (url: string, headers: any, body: any, cb: any) => {
+      http_post: async (url: string, headers_or_options: any, body_arg: any, cb: any) => {
         try {
+          let headers = headers_or_options;
+          let body = body_arg;
+          if (typeof headers_or_options === 'object' && headers_or_options !== null && !body_arg && (headers_or_options.body || headers_or_options.headers)) {
+             body = headers_or_options.body;
+             headers = headers_or_options.headers;
+          }
           const finalHeaders = { ...(headers || {}) };
           if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
             finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
@@ -510,10 +521,11 @@ program.command('test')
           const resBody = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
           const response = { status: res.status, statusCode: res.status, body: resBody, headers: res.headers };
           if (cb) cb(response);
-          return response;
+          return response.body;
         } catch (e: any) {
           const res = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
-          if (cb) cb(res); return res;
+          if (cb) cb(res);
+          return res.body;
         }
       },
       registerSettings: (schema: any) => {
