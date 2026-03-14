@@ -476,6 +476,7 @@ program.command('test')
     const jsContent = await fs.readFile(jsPath, 'utf8');
 
     console.log(`\n--- Testing ${manifest.packageName} -> ${options.function} ---`);
+    const preferences: Record<string, any> = {};
     const context: any = {
       manifest,
       console: { 
@@ -484,56 +485,60 @@ program.command('test')
       },
       http_get: async (url: string, headers: any, cb: any) => {
         try {
-          const res = await axios.get(url, { headers: headers || {} });
-          const result = { status: res.status, statusCode: res.status, body: typeof res.data === 'string' ? res.data : JSON.stringify(res.data), headers: res.headers };
-          if (cb) cb(result); return result;
+          const finalHeaders = { ...(headers || {}) };
+          if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
+            finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
+          }
+          const res = await axios.get(url, { headers: finalHeaders });
+          const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+          if (cb) cb({ status: res.status, statusCode: res.status, body, headers: res.headers });
+          return body;
         } catch (e: any) {
           const res = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
-          if (cb) cb(res); return res;
+          if (cb) cb(res); return typeof res.body === 'string' ? res.body : JSON.stringify(res.body);
         }
       },
       http_post: async (url: string, headers: any, body: any, cb: any) => {
         try {
-          const res = await axios.post(url, body, { headers: headers || {} });
-          const result = { status: res.status, statusCode: res.status, body: typeof res.data === 'string' ? res.data : JSON.stringify(res.data), headers: res.headers };
-          if (cb) cb(result); return result;
+          const finalHeaders = { ...(headers || {}) };
+          if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
+            finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
+          }
+          const res = await axios.post(url, body, { headers: finalHeaders });
+          const resBody = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+          if (cb) cb({ status: res.status, statusCode: res.status, body: resBody, headers: res.headers });
+          return resBody;
         } catch (e: any) {
           const res = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
-          if (cb) cb(res); return res;
+          if (cb) cb(res); return typeof res.body === 'string' ? res.body : JSON.stringify(res.body);
         }
-      },
-      _fetch: async (url: string) => {
-        try {
-          const res = await axios.get(url);
-          return typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-        } catch (e: any) {
-          throw new Error(`HTTP Error ${e.response?.status || 500} fetching ${url}`);
-        }
-      },
-      fetch: async (url: string) => {
-        const res = await axios.get(url);
-        return { 
-          status: res.status,
-          statusCode: res.status, 
-          body: typeof res.data === 'string' ? res.data : JSON.stringify(res.data), 
-          headers: res.headers 
-        };
       },
       registerSettings: (schema: any) => {
         console.log('  [Mock SDK]: Plugin registered settings:', JSON.stringify(schema, null, 2));
+      },
+      getPreference: (key: string) => {
+          return preferences[key] || null;
+      },
+      setPreference: (key: string, value: any) => {
+          preferences[key] = value;
+          return true;
       },
       solveCaptcha: async (siteKey: string, url: string) => {
         console.log('  [Mock SDK]: solveCaptcha requested for ' + url + ' with key ' + siteKey);
         return "mock_captcha_token";
       },
-      crypto: {
-        decryptAES: (data: string, key: string, iv: string) => {
-           return "decrypted(" + data + ")";
-        }
-      },
       btoa: (s: string) => Buffer.from(s).toString('base64'),
       atob: (s: string) => Buffer.from(s, 'base64').toString('utf8'),
       sendMessage: async (id: string, arg: string) => {
+        if (id === 'get_preference') {
+            const { key } = JSON.parse(arg);
+            return preferences[key] || null;
+        }
+        if (id === 'set_preference') {
+            const { key, value } = JSON.parse(arg);
+            preferences[key] = value;
+            return true;
+        }
         if (id === 'crypto_decrypt_aes') {
           const { data, key, iv } = JSON.parse(arg);
           try {
@@ -569,6 +574,7 @@ program.command('test')
       },
       globalThis: {} as any,
     };
+    context.globalThis = context;
 
     const entityDefs = `
       class Actor {
