@@ -15,7 +15,7 @@ const program = new Command();
 program
   .name('skystream')
   .description('SkyStream Plugin Development Kit CLI (Sky Gen 2)')
-  .version('1.5.5');
+  .version('1.5.7');
 
 // Schemas
 const pluginSchema = z.object({
@@ -638,20 +638,46 @@ program.command('test')
       }
 
       class StreamResult {
-        constructor(params) {
-          Object.assign(this, params);
+        constructor({ url, source, headers, subtitles, drmKid, drmKey, licenseUrl }) {
+          this.url = url;
+          this.source = source || 'Auto';
+          this.headers = headers;
+          this.subtitles = subtitles;
+          this.drmKid = drmKid;
+          this.drmKey = drmKey;
+          this.licenseUrl = licenseUrl;
         }
       }
 
+      // Sync CLI with App's Async JSDOM behavior
+      globalThis.JSDOM = class JSDOM {
+        constructor(html) {
+          this._initPromise = (async () => {
+             const dom = new __NodeJSDOM__(html);
+             this.window = { document: dom.window.document };
+             return this;
+          })();
+        }
+        async waitForInit() {
+          return await this._initPromise;
+        }
+      };
+
       globalThis.parseHtml = async function(html) {
-          return new Promise((resolve, reject) => {
-              try {
-                  const dom = new JSDOM(html);
-                  resolve(dom.window.document);
-              } catch (e) {
-                  reject(e);
-              }
-          });
+          const dom = new JSDOM(html);
+          await dom.waitForInit();
+          return dom.window.document;
+      };
+
+      globalThis.CloudStream = {
+         getLanguage: function() { return "en"; },
+         getRegion: function() { return "US"; }
+      };
+
+      globalThis.crypto = {
+        md5: function(s) { return __crypto__.createHash('md5').update(s).digest('hex'); },
+        b64encode: function(s) { return Buffer.from(s).toString('base64'); },
+        b64decode: function(s) { return Buffer.from(s, 'base64').toString('utf8'); }
       };
 
       globalThis.clearInterval = clearInterval;
@@ -675,7 +701,8 @@ program.command('test')
     sandbox.clearTimeout = clearTimeout;
     sandbox.setInterval = setInterval;
     sandbox.clearInterval = clearInterval;
-    sandbox.JSDOM = JSDOM;
+    sandbox.__NodeJSDOM__ = JSDOM;
+    sandbox.__crypto__ = crypto;
     sandbox.URL = URL;
     sandbox.globalThis = sandbox;
     
