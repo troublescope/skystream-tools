@@ -27,6 +27,7 @@ const pluginSchema = z.object({
   authors: z.array(z.string()).min(1),
   languages: z.array(z.string()).min(1),
   categories: z.array(z.string()).min(1),
+  skipBuild: z.boolean().optional(),
 });
 
 const repoSchema = z.object({
@@ -779,6 +780,10 @@ program.command('deploy')
         const mPath = path.join(itemPath, 'plugin.json');
         if (await fs.pathExists(mPath) && (await fs.stat(itemPath)).isDirectory()) {
             const manifest = await fs.readJson(mPath);
+            if (manifest.skipBuild === true) {
+                console.log("↷ Skipped " + (manifest.packageName || item) + " (skipBuild=true)");
+                continue;
+            }
             const packageName = manifest.packageName || manifest.id || item;
             const bundleName = packageName + ".sky";
             const outPath = path.join(distDir, bundleName);

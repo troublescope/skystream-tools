@@ -12,6 +12,7 @@ export interface Manifest {
   iconUrl?: string;
   languages: string[];
   categories: string[];
+  skipBuild?: boolean;
 }
 
 export type Result<T> = 
