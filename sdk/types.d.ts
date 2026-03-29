@@ -235,7 +235,7 @@ declare global {
   /** Cryptography Helpers */
   interface Crypto {
     /** Decrypt AES-CBC data with PKCS7 padding */
-    decryptAES(data: string, key: string, iv: string): string;
+    decryptAES(data: string, key: string, iv: string): Promise<string>;
   }
 
   interface HttpResponse {

@@ -37,6 +37,113 @@ const repoSchema = z.object({
   pluginLists: z.array(z.string().url()),
 });
 
+const REQUIRED_FUNCTIONS = ['getHome', 'search', 'load', 'loadStreams'] as const;
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasText(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function validateMultimediaItemShape(value: unknown, label: string): string[] {
+  const errors: string[] = [];
+  if (!isRecord(value)) {
+    errors.push(`${label}: must be an object`);
+    return errors;
+  }
+  if (!hasText(value.title)) errors.push(`${label}.title: required string`);
+  if (!hasText(value.url)) errors.push(`${label}.url: required string`);
+  if (!hasText(value.posterUrl)) errors.push(`${label}.posterUrl: required string`);
+  return errors;
+}
+
+function validateStreamShape(value: unknown, label: string): string[] {
+  const errors: string[] = [];
+  if (!isRecord(value)) {
+    errors.push(`${label}: must be an object`);
+    return errors;
+  }
+  if (!hasText(value.url)) errors.push(`${label}.url: required string`);
+  return errors;
+}
+
+function validateFunctionResult(fnName: string, response: unknown): string[] {
+  const errors: string[] = [];
+  if (!isRecord(response)) return ['response must be an object'];
+  if (typeof response.success !== 'boolean') {
+    errors.push('response.success must be boolean');
+    return errors;
+  }
+  if (response.success === false) return errors;
+
+  const data = response.data;
+  if (fnName === 'getHome') {
+    if (!isRecord(data)) {
+      errors.push('getHome.data must be an object: { "Category": MultimediaItem[] }');
+      return errors;
+    }
+    for (const [category, items] of Object.entries(data)) {
+      if (!Array.isArray(items)) {
+        errors.push(`getHome.data.${category}: must be an array`);
+        continue;
+      }
+      items.forEach((item, idx) => {
+        errors.push(...validateMultimediaItemShape(item, `getHome.data.${category}[${idx}]`));
+      });
+    }
+    return errors;
+  }
+
+  if (fnName === 'search') {
+    if (!Array.isArray(data)) {
+      errors.push('search.data must be an array of MultimediaItem');
+      return errors;
+    }
+    data.forEach((item, idx) => {
+      errors.push(...validateMultimediaItemShape(item, `search.data[${idx}]`));
+    });
+    return errors;
+  }
+
+  if (fnName === 'load') {
+    if (!isRecord(data)) {
+      errors.push('load.data must be a MultimediaItem object');
+      return errors;
+    }
+    if (!hasText(data.url)) errors.push('load.data.url: required string');
+    return errors;
+  }
+
+  if (fnName === 'loadStreams') {
+    if (!Array.isArray(data)) {
+      errors.push('loadStreams.data must be an array of StreamResult');
+      return errors;
+    }
+    data.forEach((item, idx) => {
+      errors.push(...validateStreamShape(item, `loadStreams.data[${idx}]`));
+    });
+    return errors;
+  }
+
+  return errors;
+}
+
+function detectExports(jsContent: string): { missing: string[]; runtimeError?: string } {
+  const sandbox: any = Object.create(null);
+  sandbox.globalThis = sandbox;
+  sandbox.console = console;
+  const vmContext = vm.createContext(sandbox);
+  try {
+    vm.runInContext(jsContent, vmContext, { timeout: 5000, breakOnSigint: true });
+  } catch (e: any) {
+    return { missing: [...REQUIRED_FUNCTIONS], runtimeError: e?.message || String(e) };
+  }
+  const missing = REQUIRED_FUNCTIONS.filter((fn) => typeof (vmContext as any).globalThis[fn] !== 'function');
+  return { missing };
+}
+
 const JS_TEMPLATE = `(function() {
     /**
      * @typedef {Object} Response
@@ -437,10 +544,14 @@ program.command('validate')
                 pluginSchema.parse(manifest);
                 console.log(`✓ ${manifest.packageName}: Manifest OK`);
                 const js = await fs.readFile(path.join(itemPath, 'plugin.js'), 'utf8');
-                if (js.includes('globalThis.getHome = getHome')) {
-                    console.log(`✓ ${manifest.packageName}: Logic OK`);
+                const exportCheck = detectExports(js);
+                if (exportCheck.runtimeError) {
+                  console.warn(`! ${manifest.packageName}: Runtime parse issue (${exportCheck.runtimeError})`);
+                }
+                if (exportCheck.missing.length === 0) {
+                    console.log(`✓ ${manifest.packageName}: Logic exports OK`);
                 } else {
-                    console.warn(`! ${manifest.packageName}: Missing exports`);
+                    console.warn(`! ${manifest.packageName}: Missing exports -> ${exportCheck.missing.join(', ')}`);
                 }
                 count++;
             } catch (e: any) {
@@ -457,141 +568,178 @@ program.command('validate')
 program.command('test')
   .description('Test a specific plugin')
   .option('-p, --path <path>', 'Path to plugin folder', '.')
+  .option('-r, --repo', 'Treat --path as repository root and run all plugin folders')
+  .option('--plugin <name>', 'In --repo mode, only run a specific plugin folder/packageName')
   .option('-f, --function <function>', 'Function to test', 'getHome')
   .option('-q, --query <query>', 'Query for function', '')
   .action(async (options) => {
-    const pluginDir = path.resolve(options.path);
-    const manifestPath = path.join(pluginDir, 'plugin.json');
-    const jsPath = path.join(pluginDir, 'plugin.js');
-
-    if (!await fs.pathExists(manifestPath)) {
-      console.error(`Error: plugin.json not found at ${manifestPath}`);
-      console.log('Hint: Run this command from your plugin directory or specify --path');
-      process.exit(1);
-    }
-    if (!await fs.pathExists(jsPath)) {
-      console.error(`Error: plugin.js not found at ${jsPath}`);
+    const functionName = String(options.function || 'getHome');
+    if (!REQUIRED_FUNCTIONS.includes(functionName as any)) {
+      console.error(`Error: Unsupported function "${functionName}". Use one of: ${REQUIRED_FUNCTIONS.join(', ')}`);
       process.exit(1);
     }
 
-    const manifest = await fs.readJson(manifestPath);
-    const jsContent = await fs.readFile(jsPath, 'utf8');
+    const pluginDirs: string[] = [];
+    const targetPath = path.resolve(options.path);
+    if (options.repo) {
+      const items = await fs.readdir(targetPath);
+      for (const item of items) {
+        const itemPath = path.join(targetPath, item);
+        if (!(await fs.stat(itemPath)).isDirectory()) continue;
+        const manifestPath = path.join(itemPath, 'plugin.json');
+        const jsPath = path.join(itemPath, 'plugin.js');
+        if (await fs.pathExists(manifestPath) && await fs.pathExists(jsPath)) {
+          pluginDirs.push(itemPath);
+        }
+      }
+    } else {
+      pluginDirs.push(targetPath);
+    }
 
-    console.log(`\n--- Testing ${manifest.packageName} -> ${options.function} ---`);
-    const preferences: Record<string, any> = {};
-    const context: any = {
-      manifest,
-      console: { 
-        log: (...args: any[]) => console.log('  [JS]:', ...args), 
-        error: (...args: any[]) => console.error('  [JS ERR]:', ...args) 
-      },
-      http_get: async (url: string, headers_or_options: any, cb: any) => {
-        try {
-          let headers = headers_or_options;
-          if (typeof headers_or_options === 'object' && headers_or_options !== null && (headers_or_options.headers || headers_or_options.body)) {
-             headers = headers_or_options.headers;
-          }
-          const finalHeaders = { ...(headers || {}) };
-          if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
-            finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
-          }
-          const res = await axios.get(url, { headers: finalHeaders, method: 'GET' });
-          const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-          const response = { status: res.status, statusCode: res.status, body, headers: res.headers };
-          if (cb) cb(response);
-          return response;
-        } catch (e: any) {
-          const response = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
-          if (cb) cb(response);
-          return response;
+    if (pluginDirs.length === 0) {
+      console.error(`Error: No plugin folders found in ${targetPath}`);
+      process.exit(1);
+    }
+
+    let failures = 0;
+
+    for (const pluginDir of pluginDirs) {
+      const manifestPath = path.join(pluginDir, 'plugin.json');
+      const jsPath = path.join(pluginDir, 'plugin.js');
+
+      if (!await fs.pathExists(manifestPath) || !await fs.pathExists(jsPath)) {
+        if (!options.repo) {
+          console.error(`Error: plugin.json/plugin.js not found at ${pluginDir}`);
+          console.log('Hint: Run this command from your plugin directory or specify --path');
+          process.exit(1);
         }
-      },
-      http_post: async (url: string, headers: any, body: any, cb: any) => {
-        try {
-          const finalHeaders = { ...(headers || {}) };
-          if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
-            finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
-          }
-          const res = await axios.post(url, body, { headers: finalHeaders, method: 'POST' });
-          const resBody = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-          const response = { status: res.status, statusCode: res.status, body: resBody, headers: res.headers };
-          if (cb) cb(response);
-          return response;
-        } catch (e: any) {
-          const response = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
-          if (cb) cb(response);
-          return response;
+        continue;
+      }
+
+      const manifest = await fs.readJson(manifestPath);
+      const pluginName = manifest.packageName || path.basename(pluginDir);
+      if (options.repo && options.plugin) {
+        if (options.plugin !== path.basename(pluginDir) && options.plugin !== pluginName) {
+          continue;
         }
-      },
-      registerSettings: (schema: any) => {
-        console.log('  [Mock SDK]: Plugin registered settings:', JSON.stringify(schema, null, 2));
-      },
-      getPreference: (key: string) => {
-          return preferences[key] || null;
-      },
-      setPreference: (key: string, value: any) => {
-          preferences[key] = value;
-          return true;
-      },
-      solveCaptcha: async (siteKey: string, url: string) => {
-        console.log('  [Mock SDK]: solveCaptcha requested for ' + url + ' with key ' + siteKey);
-        return "mock_captcha_token";
-      },
-      btoa: (s: string) => Buffer.from(s).toString('base64'),
-      atob: (s: string) => Buffer.from(s, 'base64').toString('utf8'),
-      sendMessage: async (id: string, arg: string) => {
-        if (id === 'get_preference') {
-            const { key } = JSON.parse(arg);
+      }
+      const jsContent = await fs.readFile(jsPath, 'utf8');
+
+      console.log(`\n--- Testing ${pluginName} -> ${functionName} ---`);
+      const preferences: Record<string, any> = {};
+      const context: any = {
+        manifest,
+        console: { 
+          log: (...args: any[]) => console.log('  [JS]:', ...args), 
+          error: (...args: any[]) => console.error('  [JS ERR]:', ...args) 
+        },
+        http_get: async (url: string, headers_or_options: any, cb: any) => {
+          try {
+            let headers = headers_or_options;
+            if (typeof headers_or_options === 'object' && headers_or_options !== null && (headers_or_options.headers || headers_or_options.body)) {
+               headers = headers_or_options.headers;
+            }
+            const finalHeaders = { ...(headers || {}) };
+            if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
+              finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
+            }
+            const res = await axios.get(url, { headers: finalHeaders, method: 'GET' });
+            const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+            const response = { status: res.status, statusCode: res.status, body, headers: res.headers };
+            if (cb) cb(response);
+            return response;
+          } catch (e: any) {
+            const response = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
+            if (cb) cb(response);
+            return response;
+          }
+        },
+        http_post: async (url: string, headers: any, body: any, cb: any) => {
+          try {
+            const finalHeaders = { ...(headers || {}) };
+            if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
+              finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
+            }
+            const res = await axios.post(url, body, { headers: finalHeaders, method: 'POST' });
+            const resBody = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+            const response = { status: res.status, statusCode: res.status, body: resBody, headers: res.headers };
+            if (cb) cb(response);
+            return response;
+          } catch (e: any) {
+            const response = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
+            if (cb) cb(response);
+            return response;
+          }
+        },
+        registerSettings: (schema: any) => {
+          console.log('  [Mock SDK]: Plugin registered settings:', JSON.stringify(schema, null, 2));
+        },
+        getPreference: (key: string) => {
             return preferences[key] || null;
-        }
-        if (id === 'set_preference') {
-            const { key, value } = JSON.parse(arg);
+        },
+        setPreference: (key: string, value: any) => {
             preferences[key] = value;
             return true;
-        }
-        if (id === 'crypto_decrypt_aes') {
-          const { data, key, iv } = JSON.parse(arg);
-          try {
-            const decodeBuffer = (s: string) => {
-              return s.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(s) ? Buffer.from(s, 'base64') : Buffer.from(s, 'utf8');
-            };
-
-            const k = decodeBuffer(key);
-            const ivBuf = Buffer.alloc(16, 0);
-            decodeBuffer(iv).copy(ivBuf);
-            
-            let algo = 'aes-256-cbc';
-            let finalKey = Buffer.alloc(32, 0);
-            if (k.length <= 16) {
-                algo = 'aes-128-cbc';
-                finalKey = Buffer.alloc(16, 0);
-            } else if (k.length <= 24) {
-                algo = 'aes-192-cbc';
-                finalKey = Buffer.alloc(24, 0);
-            }
-            k.copy(finalKey);
-
-            const decipher = crypto.createDecipheriv(algo, finalKey, ivBuf);
-            let decrypted = decipher.update(data, 'base64', 'utf8');
-            decrypted += decipher.final('utf8');
-            return decrypted;
-          } catch (e: any) {
-            console.error('  [Mock ERR]: AES Decryption failed:', e.message);
-            return data;
+        },
+        solveCaptcha: async (siteKey: string, url: string) => {
+          console.log('  [Mock SDK]: solveCaptcha requested for ' + url + ' with key ' + siteKey);
+          return "mock_captcha_token";
+        },
+        btoa: (s: string) => Buffer.from(s).toString('base64'),
+        atob: (s: string) => Buffer.from(s, 'base64').toString('utf8'),
+        sendMessage: async (id: string, arg: string) => {
+          if (id === 'get_preference') {
+              const { key } = JSON.parse(arg);
+              return preferences[key] || null;
           }
-        }
-        return '';
-      },
-      crypto: {
-        decryptAES: async (data: string, key: string, iv: string) => {
-          return context.sendMessage('crypto_decrypt_aes', JSON.stringify({ data, key, iv }));
-        }
-      },
-      globalThis: {} as any,
-    };
-    context.globalThis = context;
+          if (id === 'set_preference') {
+              const { key, value } = JSON.parse(arg);
+              preferences[key] = value;
+              return true;
+          }
+          if (id === 'crypto_decrypt_aes') {
+            const { data, key, iv } = JSON.parse(arg);
+            try {
+              const decodeBuffer = (s: string) => {
+                return s.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(s) ? Buffer.from(s, 'base64') : Buffer.from(s, 'utf8');
+              };
 
-    const entityDefs = `
+              const k = decodeBuffer(key);
+              const ivBuf = Buffer.alloc(16, 0);
+              decodeBuffer(iv).copy(ivBuf);
+              
+              let algo = 'aes-256-cbc';
+              let finalKey = Buffer.alloc(32, 0);
+              if (k.length <= 16) {
+                  algo = 'aes-128-cbc';
+                  finalKey = Buffer.alloc(16, 0);
+              } else if (k.length <= 24) {
+                  algo = 'aes-192-cbc';
+                  finalKey = Buffer.alloc(24, 0);
+              }
+              k.copy(finalKey);
+
+              const decipher = crypto.createDecipheriv(algo, finalKey, ivBuf);
+              let decrypted = decipher.update(data, 'base64', 'utf8');
+              decrypted += decipher.final('utf8');
+              return decrypted;
+            } catch (e: any) {
+              console.error('  [Mock ERR]: AES Decryption failed:', e.message);
+              return data;
+            }
+          }
+          return '';
+        },
+        crypto: {
+          decryptAES: async (data: string, key: string, iv: string) => {
+            return context.sendMessage('crypto_decrypt_aes', JSON.stringify({ data, key, iv }));
+          }
+        },
+        globalThis: {} as any,
+      };
+      context.globalThis = context;
+
+      const entityDefs = `
       class Actor {
         constructor(params) {
           Object.assign(this, params);
@@ -683,76 +831,103 @@ program.command('test')
       globalThis.clearInterval = clearInterval;
     `;
 
-    const sandbox = Object.create(null);
-    Object.assign(sandbox, context);
+      const sandbox = Object.create(null);
+      Object.assign(sandbox, context);
     
-    // Ensure Node globals are present
-    sandbox.atob = (str: string) => Buffer.from(str, 'base64').toString('binary');
-    sandbox.btoa = (str: string) => Buffer.from(str, 'binary').toString('base64');
-    sandbox.URL = URL;
-    sandbox.console = {
-      log: (...args: any[]) => console.log('[JS LOG]', ...args),
-      error: (...args: any[]) => console.error('[JS ERROR]', ...args),
-      warn: (...args: any[]) => console.warn('[JS WARN]', ...args),
-    };
-    sandbox.axios = axios;
-    sandbox.Buffer = Buffer;
-    sandbox.setTimeout = setTimeout;
-    sandbox.clearTimeout = clearTimeout;
-    sandbox.setInterval = setInterval;
-    sandbox.clearInterval = clearInterval;
-    sandbox.__NodeJSDOM__ = JSDOM;
-    sandbox.__crypto__ = crypto;
-    sandbox.URL = URL;
-    sandbox.globalThis = sandbox;
+      // Ensure Node globals are present
+      sandbox.atob = (str: string) => Buffer.from(str, 'base64').toString('binary');
+      sandbox.btoa = (str: string) => Buffer.from(str, 'binary').toString('base64');
+      sandbox.URL = URL;
+      sandbox.console = {
+        log: (...args: any[]) => console.log('[JS LOG]', ...args),
+        error: (...args: any[]) => console.error('[JS ERROR]', ...args),
+        warn: (...args: any[]) => console.warn('[JS WARN]', ...args),
+      };
+      sandbox.axios = axios;
+      sandbox.Buffer = Buffer;
+      sandbox.setTimeout = setTimeout;
+      sandbox.clearTimeout = clearTimeout;
+      sandbox.setInterval = setInterval;
+      sandbox.clearInterval = clearInterval;
+      sandbox.__NodeJSDOM__ = JSDOM;
+      sandbox.__crypto__ = crypto;
+      sandbox.URL = URL;
+      sandbox.globalThis = sandbox;
     
-    // Inject the classes from entityDefs into the sandbox
-    const vmContext = vm.createContext(sandbox);
-    vm.runInContext(entityDefs, vmContext);
+      // Inject the classes from entityDefs into the sandbox
+      const vmContext = vm.createContext(sandbox);
+      vm.runInContext(entityDefs, vmContext);
 
-    const combinedScript = `
-      try {
-        ${jsContent}
-      } catch (e) {
-        console.error("Critical Runtime Error: " + e.stack);
-      }
-    `;
-
-    try {
-      vm.runInContext(combinedScript, vmContext, { timeout: 5000, breakOnSigint: true });
-    } catch (e: any) {
-      console.error("VM Execution Error: " + e.message);
-    }
-
-    const fn = (vmContext as any).globalThis[options.function];
-    if (typeof fn !== 'function') { console.error('Error: exported function not found'); process.exit(1); }
-
-    const callback = (res: any) => {
-      console.log('\n--- Result ---');
-      if (res && res.success === false) {
-        console.log('\x1b[31mStatus: FAILED\x1b[0m');
-        console.log('\x1b[31mError Code: ' + (res.errorCode || 'UNKNOWN') + '\x1b[0m');
-        if (res.message) console.log('\x1b[31mMessage: ' + res.message + '\x1b[0m');
-      } else {
-        console.log('\x1b[32mStatus: SUCCESS\x1b[0m');
-      }
-      console.log(JSON.stringify(res, null, 2));
-    };
-
-    try {
-        if (options.function === 'getHome') await fn(callback);
-        else if (options.function === 'search') await fn(options.query, callback);
-        else if (!options.query || options.query.trim() === "") {
-            console.warn('\x1b[33mWarning: Function \'' + options.function + '\' usually requires a query/URL (-q), but none was provided.\x1b[0m');
-            await fn(options.query, callback);
-        } else {
-            await fn(options.query, callback);
+      const combinedScript = `
+        try {
+          ${jsContent}
+        } catch (e) {
+          console.error("Critical Runtime Error: " + e.stack);
         }
-    } catch (e: any) {
-        console.error('\n\x1b[31m--- CRITICAL ERROR DURING EXECUTION ---\x1b[0m');
-        console.error('\x1b[31m' + (e.stack || e.message) + '\x1b[0m\n');
-        process.exit(2);
+      `;
+
+      try {
+        vm.runInContext(combinedScript, vmContext, { timeout: 5000, breakOnSigint: true });
+      } catch (e: any) {
+        console.error("VM Execution Error: " + e.message);
+      }
+
+      const fn = (vmContext as any).globalThis[functionName];
+      if (typeof fn !== 'function') {
+        console.error(`Error: exported function "${functionName}" not found`);
+        failures++;
+        continue;
+      }
+
+      let callbackResult: any = undefined;
+      const callback = (res: any) => {
+        callbackResult = res;
+        console.log('\n--- Result ---');
+        if (res && res.success === false) {
+          console.log('\x1b[31mStatus: FAILED\x1b[0m');
+          console.log('\x1b[31mError Code: ' + (res.errorCode || 'UNKNOWN') + '\x1b[0m');
+          if (res.message) console.log('\x1b[31mMessage: ' + res.message + '\x1b[0m');
+        } else {
+          console.log('\x1b[32mStatus: SUCCESS\x1b[0m');
+        }
+        const contractErrors = validateFunctionResult(functionName, res);
+        if (contractErrors.length > 0) {
+          console.log('\x1b[33mContract Warnings:\x1b[0m');
+          for (const err of contractErrors) {
+            console.log(`  - ${err}`);
+          }
+        } else {
+          console.log('\x1b[32mContract: OK\x1b[0m');
+        }
+        console.log(JSON.stringify(res, null, 2));
+      };
+
+      try {
+          if (functionName === 'getHome') await fn(callback);
+          else if (functionName === 'search') await fn(options.query, callback);
+          else if (!options.query || options.query.trim() === "") {
+              console.warn('\x1b[33mWarning: Function \'' + functionName + '\' usually requires a query/URL (-q), but none was provided.\x1b[0m');
+              await fn(options.query, callback);
+          } else {
+              await fn(options.query, callback);
+          }
+      } catch (e: any) {
+          console.error('\n\x1b[31m--- CRITICAL ERROR DURING EXECUTION ---\x1b[0m');
+          console.error('\x1b[31m' + (e.stack || e.message) + '\x1b[0m\n');
+          failures++;
+          continue;
+      }
+
+      if (callbackResult === undefined) {
+        console.warn('\x1b[33mWarning: callback was never called by plugin.\x1b[0m');
+        failures++;
+      }
     }
+
+    if (options.repo) {
+      console.log(`\nRepo test finished. Failures: ${failures}`);
+    }
+    if (failures > 0) process.exit(2);
   });
 
 program.command('deploy')

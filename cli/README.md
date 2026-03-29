@@ -81,6 +81,8 @@ skystream test [options]
 
 **Options:**
 - `-p, --path <path>`: Path to plugin folder (Default: `.`).
+- `-r, --repo`: Treat `--path` as repository root and run all plugin folders.
+- `--plugin <name>`: In repo mode, only run one plugin folder/packageName.
 - `-f, --function <name>`: Function to test (Default: `getHome`).
 - `-q, --query <query>`: Query string (URLs for `load`/`loadStreams`, keywords for `search`).
 
@@ -97,6 +99,9 @@ skystream test -f load -q "https://site.com/movie/123"
 
 # Test stream links extraction
 skystream test -f loadStreams -q "https://site.com/movie/123"
+
+# Test all plugins in a repository folder
+skystream test --repo -p ../skystream-plugins -f getHome
 ```
 
 ---
