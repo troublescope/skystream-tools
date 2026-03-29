@@ -9,6 +9,7 @@ import archiver from 'archiver';
 import axios from 'axios';
 import AdmZip from 'adm-zip';
 import { JSDOM } from 'jsdom';
+import { spawn } from 'child_process';
 
 const program = new Command();
 
@@ -39,6 +40,80 @@ const repoSchema = z.object({
 
 const REQUIRED_FUNCTIONS = ['getHome', 'search', 'load', 'loadStreams'] as const;
 const CLI_TEST_NAMESPACE = '__skystream_cli_test__';
+const DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
+const DEBUG_HTTP = process.env.SKYSTREAM_CLI_DEBUG_HTTP === '1';
+const PYTHON_CFFI_BRIDGE = `
+import json, sys, time
+from curl_cffi import requests
+
+def is_cf(status, body):
+    text = (body or "").lower()
+    return status in (403, 503) and (
+        "just a moment" in text or
+        "cf-ray" in text or
+        "cf_chl" in text or
+        "challenge-platform" in text or
+        "attention required" in text
+    )
+
+def main():
+    payload = json.loads(sys.stdin.read() or "{}")
+    method = str(payload.get("method", "GET")).upper()
+    url = str(payload.get("url", ""))
+    headers = payload.get("headers") or {}
+    body = payload.get("body", None)
+    timeout = int(payload.get("timeout", 30))
+    attempts = int(payload.get("attempts", 4))
+
+    ses = requests.Session()
+    last = None
+    for i in range(max(1, attempts)):
+        kwargs = {
+            "method": method,
+            "url": url,
+            "headers": headers,
+            "timeout": timeout,
+            "allow_redirects": True,
+            "impersonate": "chrome124",
+        }
+        if method != "GET" and body is not None:
+            kwargs["data"] = body
+
+        resp = ses.request(**kwargs)
+        current = {
+            "status": int(resp.status_code),
+            "statusCode": int(resp.status_code),
+            "body": resp.text or "",
+            "headers": dict(resp.headers or {}),
+            "finalUrl": str(resp.url or url),
+        }
+        last = current
+        if not is_cf(current["status"], current["body"]):
+            break
+        if i < attempts - 1:
+            time.sleep(0.8 + (0.4 * i))
+
+    sys.stdout.write(json.dumps(last or {
+        "status": 0,
+        "statusCode": 0,
+        "body": "",
+        "headers": {},
+        "finalUrl": url,
+    }))
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        sys.stdout.write(json.dumps({
+            "status": 0,
+            "statusCode": 0,
+            "body": "",
+            "headers": {},
+            "finalUrl": "",
+            "error": str(e),
+        }))
+`;
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -188,6 +263,163 @@ function detectExports(jsContent: string, manifest: Record<string, any> = {}, pa
   const exportsObj = (vmContext as any).globalThis[CLI_TEST_NAMESPACE] || {};
   const missing = REQUIRED_FUNCTIONS.filter((fn) => typeof exportsObj[fn] !== 'function');
   return { missing };
+}
+
+function isCloudflareChallenge(status: number, body: string): boolean {
+  const text = String(body || '').toLowerCase();
+  return (status === 403 || status === 503) && (
+    text.includes('just a moment') ||
+    text.includes('cf-ray') ||
+    text.includes('cf_chl') ||
+    text.includes('challenge-platform') ||
+    text.includes('attention required')
+  );
+}
+
+async function requestWithCurlCffi(
+  method: 'GET' | 'POST',
+  url: string,
+  headers: Record<string, any>,
+  body: any,
+): Promise<any | null> {
+  return await new Promise((resolve) => {
+    const child = spawn('python', ['-c', PYTHON_CFFI_BRIDGE], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const payload = JSON.stringify({
+      method,
+      url,
+      headers,
+      body: body ?? null,
+      timeout: 30,
+      attempts: 4,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (err) => {
+      if (DEBUG_HTTP) console.log(`[CLI HTTP] cffi spawn error: ${err?.message || err}`);
+      resolve(null);
+    });
+    child.on('close', () => {
+      if (stderr.trim() && DEBUG_HTTP) console.log(`[CLI HTTP] cffi stderr: ${stderr.trim()}`);
+      if (!stdout.trim()) return resolve(null);
+      try {
+        const parsed = JSON.parse(stdout);
+        if (parsed && typeof parsed === 'object') return resolve(parsed);
+      } catch (_) {}
+      resolve(null);
+    });
+
+    child.stdin.write(payload);
+    child.stdin.end();
+  });
+}
+
+function sanitizeHeadersForCffi(headers: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  const blockedPrefixes = ['sec-ch-', 'sec-fetch-'];
+  const allowedKeys = new Set([
+    'user-agent',
+    'accept',
+    'accept-language',
+    'referer',
+    'origin',
+    'cookie',
+    'content-type',
+    'authorization',
+  ]);
+
+  for (const [k, v] of Object.entries(headers || {})) {
+    const key = k.toLowerCase();
+    if (blockedPrefixes.some((p) => key.startsWith(p))) continue;
+    if (!allowedKeys.has(key) && key.startsWith('x-')) continue;
+    if (v === undefined || v === null || String(v).trim() === '') continue;
+    out[k] = v;
+  }
+  if (!Object.keys(out).some((k) => k.toLowerCase() === 'user-agent')) {
+    out['User-Agent'] = DEFAULT_UA;
+  }
+  return out;
+}
+
+async function requestWithParityHttp(
+  method: 'GET' | 'POST',
+  url: string,
+  headersInput: any,
+  bodyInput: any,
+  cb?: (res: any) => void,
+): Promise<any> {
+  let headers = headersInput;
+  let body = bodyInput;
+
+  if (isRecord(headersInput) && (headersInput.headers || headersInput.body)) {
+    headers = headersInput.headers;
+    if ((body === undefined || body === null || body === '') && headersInput.body !== undefined) {
+      body = headersInput.body;
+    }
+  }
+
+  const finalHeaders: Record<string, any> = { ...(headers || {}) };
+  if (!Object.keys(finalHeaders).some((k) => k.toLowerCase() === 'user-agent')) {
+    finalHeaders['User-Agent'] = DEFAULT_UA;
+  }
+
+  try {
+    const res = await axios.request({
+      method,
+      url,
+      headers: finalHeaders,
+      data: body,
+      validateStatus: () => true,
+      maxRedirects: 8,
+    });
+
+    const response = {
+      status: res.status,
+      statusCode: res.status,
+      body: typeof res.data === 'string' ? res.data : JSON.stringify(res.data),
+      headers: res.headers || {},
+      finalUrl: (res.request as any)?.res?.responseUrl || res.config?.url || url,
+    };
+
+    if (isCloudflareChallenge(response.status, response.body)) {
+      if (DEBUG_HTTP) console.log(`[CLI HTTP] CF detected for ${url}, attempting cffi fallback`);
+      const cfHeaders = sanitizeHeadersForCffi(finalHeaders);
+      const cfRes = await requestWithCurlCffi(method, url, cfHeaders, body);
+      if (cfRes && Number(cfRes.status || 0) > 0) {
+        if (DEBUG_HTTP) console.log(`[CLI HTTP] cffi status=${cfRes.status || cfRes.statusCode || 0} finalUrl=${cfRes.finalUrl || url}`);
+        const out = {
+          status: Number(cfRes.status || cfRes.statusCode || 0),
+          statusCode: Number(cfRes.statusCode || cfRes.status || 0),
+          body: String(cfRes.body || ''),
+          headers: cfRes.headers || {},
+          finalUrl: String(cfRes.finalUrl || url),
+        };
+        if (cb) cb(out);
+        return out;
+      }
+      if (DEBUG_HTTP && cfRes) console.log(`[CLI HTTP] cffi returned non-success status=${cfRes.status || cfRes.statusCode || 0} error=${cfRes.error || ''}`);
+      if (DEBUG_HTTP && !cfRes) console.log('[CLI HTTP] cffi returned null');
+    }
+
+    if (cb) cb(response);
+    return response;
+  } catch (e: any) {
+    const out = {
+      status: e.response?.status || 500,
+      statusCode: e.response?.status || 500,
+      body: typeof e.response?.data === 'string' ? e.response.data : JSON.stringify(e.response?.data || e.message),
+      headers: e.response?.headers || {},
+      finalUrl: e.response?.config?.url || url,
+    };
+    if (cb) cb(out);
+    return out;
+  }
 }
 
 const JS_TEMPLATE = `(function() {
@@ -680,42 +912,10 @@ program.command('test')
           error: (...args: any[]) => console.error('  [JS ERR]:', ...args) 
         },
         http_get: async (url: string, headers_or_options: any, cb: any) => {
-          try {
-            let headers = headers_or_options;
-            if (typeof headers_or_options === 'object' && headers_or_options !== null && (headers_or_options.headers || headers_or_options.body)) {
-               headers = headers_or_options.headers;
-            }
-            const finalHeaders = { ...(headers || {}) };
-            if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
-              finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
-            }
-            const res = await axios.get(url, { headers: finalHeaders, method: 'GET' });
-            const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-            const response = { status: res.status, statusCode: res.status, body, headers: res.headers };
-            if (cb) cb(response);
-            return response;
-          } catch (e: any) {
-            const response = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
-            if (cb) cb(response);
-            return response;
-          }
+          return requestWithParityHttp('GET', url, headers_or_options, null, cb);
         },
         http_post: async (url: string, headers: any, body: any, cb: any) => {
-          try {
-            const finalHeaders = { ...(headers || {}) };
-            if (!Object.keys(finalHeaders).some(k => k.toLowerCase() === 'user-agent')) {
-              finalHeaders['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
-            }
-            const res = await axios.post(url, body, { headers: finalHeaders, method: 'POST' });
-            const resBody = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-            const response = { status: res.status, statusCode: res.status, body: resBody, headers: res.headers };
-            if (cb) cb(response);
-            return response;
-          } catch (e: any) {
-            const response = { status: e.response?.status || 500, statusCode: e.response?.status || 500, body: e.response?.data || e.message, headers: e.response?.headers || {} };
-            if (cb) cb(response);
-            return response;
-          }
+          return requestWithParityHttp('POST', url, headers, body, cb);
         },
         registerSettings: (schema: any) => {
           console.log('  [Mock SDK]: Plugin registered settings:', JSON.stringify(schema, null, 2));
