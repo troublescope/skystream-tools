@@ -38,6 +38,7 @@ const repoSchema = z.object({
 });
 
 const REQUIRED_FUNCTIONS = ['getHome', 'search', 'load', 'loadStreams'] as const;
+const CLI_TEST_NAMESPACE = '__skystream_cli_test__';
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -130,17 +131,62 @@ function validateFunctionResult(fnName: string, response: unknown): string[] {
   return errors;
 }
 
-function detectExports(jsContent: string): { missing: string[]; runtimeError?: string } {
+function wrapPluginForAppParity(
+  script: string,
+  manifest: Record<string, any>,
+  packageName: string,
+  namespace: string = CLI_TEST_NAMESPACE,
+): string {
+  const manifestJson = JSON.stringify(manifest || {});
+  return `
+  (function() {
+    const manifest = ${manifestJson};
+    const getPreference = (key) => {
+      return sendMessage('get_preference', JSON.stringify({ packageName: ${JSON.stringify(packageName)}, key: key }));
+    };
+    const setPreference = (key, value) => {
+      return sendMessage('set_preference', JSON.stringify({ packageName: ${JSON.stringify(packageName)}, key: key, value: value }));
+    };
+    const registerSettings = (schema) => {
+      return sendMessage('register_settings', JSON.stringify({ packageName: ${JSON.stringify(packageName)}, schema: schema }));
+    };
+    globalThis.getPreference = getPreference;
+    globalThis.setPreference = setPreference;
+    globalThis.registerSettings = registerSettings;
+
+    var exports = (function() {
+      ${script}
+      return {
+        getHome: (typeof getHome !== 'undefined') ? getHome : (typeof globalThis.getHome !== 'undefined' ? globalThis.getHome : undefined),
+        search: (typeof search !== 'undefined') ? search : (typeof globalThis.search !== 'undefined' ? globalThis.search : undefined),
+        load: (typeof load !== 'undefined') ? load : (typeof globalThis.load !== 'undefined' ? globalThis.load : undefined),
+        loadStreams: (typeof loadStreams !== 'undefined') ? loadStreams : (typeof globalThis.loadStreams !== 'undefined' ? globalThis.loadStreams : undefined),
+      };
+    })();
+
+    globalThis[${JSON.stringify(namespace)}] = exports;
+    if (globalThis.getHome) delete globalThis.getHome;
+    if (globalThis.search) delete globalThis.search;
+    if (globalThis.load) delete globalThis.load;
+    if (globalThis.loadStreams) delete globalThis.loadStreams;
+  })();
+  `;
+}
+
+function detectExports(jsContent: string, manifest: Record<string, any> = {}, packageName = 'cli.validate'): { missing: string[]; runtimeError?: string } {
   const sandbox: any = Object.create(null);
   sandbox.globalThis = sandbox;
   sandbox.console = console;
+  sandbox.sendMessage = () => null;
   const vmContext = vm.createContext(sandbox);
   try {
-    vm.runInContext(jsContent, vmContext, { timeout: 5000, breakOnSigint: true });
+    const wrapped = wrapPluginForAppParity(jsContent, manifest, packageName);
+    vm.runInContext(wrapped, vmContext, { timeout: 5000, breakOnSigint: true });
   } catch (e: any) {
     return { missing: [...REQUIRED_FUNCTIONS], runtimeError: e?.message || String(e) };
   }
-  const missing = REQUIRED_FUNCTIONS.filter((fn) => typeof (vmContext as any).globalThis[fn] !== 'function');
+  const exportsObj = (vmContext as any).globalThis[CLI_TEST_NAMESPACE] || {};
+  const missing = REQUIRED_FUNCTIONS.filter((fn) => typeof exportsObj[fn] !== 'function');
   return { missing };
 }
 
@@ -544,7 +590,7 @@ program.command('validate')
                 pluginSchema.parse(manifest);
                 console.log(`✓ ${manifest.packageName}: Manifest OK`);
                 const js = await fs.readFile(path.join(itemPath, 'plugin.js'), 'utf8');
-                const exportCheck = detectExports(js);
+                const exportCheck = detectExports(js, manifest, manifest.packageName || item);
                 if (exportCheck.runtimeError) {
                   console.warn(`! ${manifest.packageName}: Runtime parse issue (${exportCheck.runtimeError})`);
                 }
@@ -687,15 +733,24 @@ program.command('test')
         },
         btoa: (s: string) => Buffer.from(s).toString('base64'),
         atob: (s: string) => Buffer.from(s, 'base64').toString('utf8'),
-        sendMessage: async (id: string, arg: string) => {
+        sendMessage: (id: string, arg: string) => {
           if (id === 'get_preference') {
-              const { key } = JSON.parse(arg);
+              const { packageName: pName, key } = JSON.parse(arg);
+              const scopedKey = pName ? `${pName}:${key}` : key;
+              if (Object.prototype.hasOwnProperty.call(preferences, scopedKey)) return preferences[scopedKey];
               return preferences[key] || null;
           }
           if (id === 'set_preference') {
-              const { key, value } = JSON.parse(arg);
+              const { packageName: pName, key, value } = JSON.parse(arg);
+              const scopedKey = pName ? `${pName}:${key}` : key;
+              preferences[scopedKey] = value;
               preferences[key] = value;
               return true;
+          }
+          if (id === 'register_settings') {
+            const { packageName: pName, schema } = JSON.parse(arg);
+            console.log('  [Mock SDK]: Plugin registered settings for ' + (pName || pluginName) + ':', JSON.stringify(schema, null, 2));
+            return true;
           }
           if (id === 'crypto_decrypt_aes') {
             const { data, key, iv } = JSON.parse(arg);
@@ -860,7 +915,7 @@ program.command('test')
 
       const combinedScript = `
         try {
-          ${jsContent}
+          ${wrapPluginForAppParity(jsContent, manifest, pluginName)}
         } catch (e) {
           console.error("Critical Runtime Error: " + e.stack);
         }
@@ -872,7 +927,8 @@ program.command('test')
         console.error("VM Execution Error: " + e.message);
       }
 
-      const fn = (vmContext as any).globalThis[functionName];
+      const scopedExports = (vmContext as any).globalThis[CLI_TEST_NAMESPACE] || {};
+      const fn = scopedExports[functionName] || (vmContext as any).globalThis[functionName];
       if (typeof fn !== 'function') {
         console.error(`Error: exported function "${functionName}" not found`);
         failures++;
